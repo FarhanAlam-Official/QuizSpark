@@ -128,14 +128,14 @@ export function QuestionCard({
     const isCorrect = optionIndex === question.correctOption
 
     if (isCorrect) {
-      playSound("success")
+      playSound("correct")
       confetti({
         particleCount: 100,
         spread: 70,
         origin: { y: 0.6 },
       })
     } else {
-      playSound("error")
+      playSound("incorrect")
     }
 
     setShowResult(true)
