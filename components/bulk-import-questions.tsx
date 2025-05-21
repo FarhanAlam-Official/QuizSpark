@@ -8,14 +8,14 @@ import { AlertCircle, CheckCircle, FileText, Upload } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { motion } from "framer-motion"
 import { useSound } from "@/components/sound-effects"
-import { useAppContext } from "@/lib/context/AppContext"
+import { useApp } from "@/lib/context/AppContext"
 
 interface BulkImportQuestionsProps {
   onImportComplete: () => void
 }
 
 export function BulkImportQuestions({ onImportComplete }: BulkImportQuestionsProps) {
-  const { addQuestion } = useAppContext()
+  const { addQuestion } = useApp()
   const [inputText, setInputText] = useState("")
   const [importStatus, setImportStatus] = useState<"idle" | "success" | "error">("idle")
   const [importCount, setImportCount] = useState(0)
