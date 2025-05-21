@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Edit, Plus, Trash, Upload } from "lucide-react"
+import { Edit, Plus, Trash, Upload, Search, Filter } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -35,6 +35,13 @@ export default function QuestionsPage() {
   const [showBulkImport, setShowBulkImport] = useState(false)
   const { playSound } = useSound()
 
+  // Filter state
+  const [filteredQuestions, setFilteredQuestions] = useState<Question[]>([])
+  const [searchQuery, setSearchQuery] = useState("")
+  const [selectedTopic, setSelectedTopic] = useState<string>("all")
+  const [selectedDifficulty, setSelectedDifficulty] = useState<string>("all")
+  const [topics, setTopics] = useState<Array<{ name: string, count: number }>>([])
+
   // Form state
   const [formData, setFormData] = useState({
     question: "",
@@ -43,6 +50,49 @@ export default function QuestionsPage() {
     topic: "",
     difficulty: "Normal" as "Easy" | "Normal" | "Hard",
   })
+
+  // Extract unique topics and their counts
+  useEffect(() => {
+    if (!loading) {
+      const topicCounts = questions.reduce((acc, q) => {
+        acc[q.topic] = (acc[q.topic] || 0) + 1
+        return acc
+      }, {} as Record<string, number>)
+
+      const uniqueTopics = Object.entries(topicCounts).map(([name, count]) => ({
+        name,
+        count
+      })).sort((a, b) => a.name.localeCompare(b.name))
+
+      setTopics(uniqueTopics)
+    }
+  }, [loading, questions])
+
+  // Filter questions based on search, topic, and difficulty
+  useEffect(() => {
+    let filtered = [...questions]
+
+    // Apply search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase()
+      filtered = filtered.filter(q => 
+        q.question.toLowerCase().includes(query) || 
+        q.topic.toLowerCase().includes(query)
+      )
+    }
+
+    // Apply topic filter
+    if (selectedTopic !== "all") {
+      filtered = filtered.filter(q => q.topic === selectedTopic)
+    }
+
+    // Apply difficulty filter
+    if (selectedDifficulty !== "all") {
+      filtered = filtered.filter(q => q.difficulty === selectedDifficulty)
+    }
+
+    setFilteredQuestions(filtered)
+  }, [questions, searchQuery, selectedTopic, selectedDifficulty])
 
   const resetForm = () => {
     setFormData({
@@ -252,13 +302,84 @@ export default function QuestionsPage() {
           <CardHeader className="border-b dark:border-gray-700">
             <CardTitle>Question List</CardTitle>
             <CardDescription>Manage your quiz questions</CardDescription>
+            
+            {/* Filter Section */}
+            <div className="mt-4 space-y-4">
+              <div className="flex items-center gap-4">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    placeholder="Search questions or topics..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-9 rounded-xl"
+                  />
+                </div>
+                <Select value={selectedDifficulty} onValueChange={setSelectedDifficulty}>
+                  <SelectTrigger className="w-[180px] rounded-xl">
+                    <SelectValue placeholder="Select difficulty" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Difficulties</SelectItem>
+                    <SelectItem value="Easy">Easy</SelectItem>
+                    <SelectItem value="Normal">Normal</SelectItem>
+                    <SelectItem value="Hard">Hard</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <Badge
+                  variant={selectedTopic === "all" ? "default" : "outline"}
+                  className="cursor-pointer"
+                  onClick={() => setSelectedTopic("all")}
+                >
+                  All Topics
+                </Badge>
+                {topics.map((t) => (
+                  <Badge
+                    key={t.name}
+                    variant={selectedTopic === t.name ? "default" : "outline"}
+                    className="cursor-pointer whitespace-nowrap"
+                    onClick={() => setSelectedTopic(t.name)}
+                  >
+                    {t.name} ({t.count})
+                  </Badge>
+                ))}
+              </div>
+
+              <div className="flex items-center justify-between text-sm text-muted-foreground">
+                <div className="flex items-center gap-2">
+                  <Filter className="h-4 w-4" />
+                  <span>
+                    Showing {filteredQuestions.length} of {questions.length} questions
+                    {selectedTopic !== "all" && ` in "${selectedTopic}"`}
+                    {selectedDifficulty !== "all" && ` with ${selectedDifficulty} difficulty`}
+                  </span>
+                </div>
+                {(selectedTopic !== "all" || selectedDifficulty !== "all" || searchQuery) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setSelectedTopic("all")
+                      setSelectedDifficulty("all")
+                      setSearchQuery("")
+                    }}
+                    className="h-auto p-0"
+                  >
+                    Clear filters
+                  </Button>
+                )}
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="p-6">
             {loading ? (
               <div className="flex items-center justify-center py-8">
                 <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
               </div>
-            ) : questions.length > 0 ? (
+            ) : filteredQuestions.length > 0 ? (
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -269,7 +390,7 @@ export default function QuestionsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {questions.map((question: Question, index: number) => (
+                  {filteredQuestions.map((question: Question, index: number) => (
                     <motion.tr
                       key={question.id}
                       initial={{ opacity: 0, x: -20 }}
@@ -301,7 +422,11 @@ export default function QuestionsPage() {
               <Alert>
                 <AlertCircle className="h-4 w-4" />
                 <AlertTitle>No questions found</AlertTitle>
-                <AlertDescription>Add questions using the "Add Question" button to get started.</AlertDescription>
+                <AlertDescription>
+                  {questions.length === 0
+                    ? "Add questions using the 'Add Question' button to get started."
+                    : "No questions match your current filters. Try adjusting them or clear the filters to see all questions."}
+                </AlertDescription>
               </Alert>
             )}
           </CardContent>

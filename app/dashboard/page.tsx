@@ -44,7 +44,7 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
+        <Card className="dashboard-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Students</CardTitle>
             <Users className="h-4 w-4 text-muted-foreground" />
@@ -59,7 +59,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="dashboard-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Questions</CardTitle>
             <BookOpen className="h-4 w-4 text-muted-foreground" />
@@ -74,7 +74,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="dashboard-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Active Tasks</CardTitle>
             <CheckSquare className="h-4 w-4 text-muted-foreground" />
@@ -89,7 +89,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="dashboard-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Leaderboard</CardTitle>
             <BarChart3 className="h-4 w-4 text-muted-foreground" />
@@ -113,7 +113,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent className="grid gap-2">
             <Link href="/quiz">
-              <Card className="cursor-pointer hover:bg-muted">
+              <Card className="cursor-pointer hover:bg-muted interactive-button">
                 <CardContent className="flex items-center gap-4 p-4">
                   <CheckSquare className="h-5 w-5" />
                   <div>
@@ -124,7 +124,7 @@ export default function DashboardPage() {
               </Card>
             </Link>
             <Link href="/students">
-              <Card className="cursor-pointer hover:bg-muted">
+              <Card className="cursor-pointer hover:bg-muted interactive-button">
                 <CardContent className="flex items-center gap-4 p-4">
                   <Users className="h-5 w-5" />
                   <div>
@@ -135,7 +135,7 @@ export default function DashboardPage() {
               </Card>
             </Link>
             <Link href="/tasks">
-              <Card className="cursor-pointer hover:bg-muted">
+              <Card className="cursor-pointer hover:bg-muted interactive-button">
                 <CardContent className="flex items-center gap-4 p-4">
                   <CheckSquare className="h-5 w-5" />
                   <div>

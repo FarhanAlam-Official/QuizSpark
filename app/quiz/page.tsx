@@ -25,7 +25,7 @@ export default function QuizPage() {
   const [topics, setTopics] = useState<Array<{ name: string, count: number }>>([])
   const [pickedStudentIds, setPickedStudentIds] = useState<number[]>([])
   const [quizMode, setQuizMode] = useState<"individual" | "group">("individual")
-  const [selectedGroup, setSelectedGroup] = useState<string>("")
+  const [selectedGroup, setSelectedGroup] = useState<string | undefined>(undefined)
   const [groups, setGroups] = useState<string[]>([])
   const [groupParticipation, setGroupParticipation] = useState<Record<string, number>>({})
   const [selectedQuestionCount, setSelectedQuestionCount] = useState<number>(5)
@@ -176,6 +176,12 @@ export default function QuizPage() {
       setSelectedQuestionCount(num)
     }
     setCustomQuestionCount(value)
+  }
+
+  const handleQuizModeChange = (value: "individual" | "group") => {
+    setQuizMode(value)
+    setSelectedGroup(undefined)
+    setPickedStudentIds([])
   }
 
   if (loading) {
@@ -329,10 +335,7 @@ export default function QuizPage() {
                     <Label>Quiz Mode</Label>
                     <RadioGroup
                       value={quizMode}
-                      onValueChange={(value: "individual" | "group") => {
-                        setQuizMode(value)
-                        setSelectedGroup("")
-                      }}
+                      onValueChange={handleQuizModeChange}
                       className="grid grid-cols-2 gap-4"
                     >
                       <Label
@@ -404,7 +407,7 @@ export default function QuizPage() {
                 disabled={
                   filteredQuestions.length === 0 ||
                   getAvailableStudents().length === 0 ||
-                  (quizMode === "group" && !selectedGroup)
+                  (quizMode === "group" && selectedGroup === undefined)
                 }
                 className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white"
               >
