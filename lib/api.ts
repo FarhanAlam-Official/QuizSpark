@@ -24,7 +24,11 @@ export interface Task {
   id: number;
   title: string;
   description: string;
-  assignedTo: number;
+  type: "Verbal" | "Written" | "Numerical";
+  assignedTo: number | null;
+  assignedGroup: string | null;
+  attachmentUrl: string | null;
+  attachmentName: string | null;
   completed: boolean;
 }
 

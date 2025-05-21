@@ -38,6 +38,7 @@ export function QuestionCard({
   const [isSelecting, setIsSelecting] = useState(false)
   const [selectedOption, setSelectedOption] = useState<number | null>(null)
   const [timeLeft, setTimeLeft] = useState(30)
+  const [initialTime, setInitialTime] = useState(30)
   const [timerActive, setTimerActive] = useState(false)
   const [showResult, setShowResult] = useState(false)
   const [isCorrect, setIsCorrect] = useState(false)
@@ -45,6 +46,15 @@ export function QuestionCard({
   const { playSound } = useSound()
   const [showCountdown, setShowCountdown] = useState(false)
   const [countdown, setCountdown] = useState(3)
+  const [isPaused, setIsPaused] = useState(false)
+
+  const handleTimeUp = () => {
+    setTimerActive(false)
+    setShowResult(true)
+    setIsCorrect(false)
+    setSelectedOption(null)
+    playSound("fail")
+  }
 
   const getRandomStudent = useCallback(() => {
     const unpickedStudents = students.filter((s) => !pickedStudentIds.includes(s.id))
@@ -61,16 +71,22 @@ export function QuestionCard({
   useEffect(() => {
     let timer: NodeJS.Timeout
 
-    if (timerActive && timeLeft > 0) {
-      timer = setTimeout(() => {
-        setTimeLeft((prev) => prev - 1)
-      }, 1000)
-    } else if (timeLeft === 0 && timerActive) {
-      handleTimeUp()
+    const cleanup = () => {
+      if (timer) clearTimeout(timer)
     }
 
-    return () => clearTimeout(timer)
-  }, [timeLeft, timerActive])
+    if (timerActive && timeLeft > 0 && !showResult && !isPaused) {
+      timer = setTimeout(() => {
+        if (timeLeft === 1) {
+          handleTimeUp()
+        } else {
+          setTimeLeft((prev) => prev - 1)
+        }
+      }, 1000)
+    }
+
+    return cleanup
+  }, [timeLeft, timerActive, showResult, isPaused, handleTimeUp])
 
   useEffect(() => {
     if (showCountdown && countdown > 0) {
@@ -82,8 +98,8 @@ export function QuestionCard({
     } else if (showCountdown && countdown === 0) {
       setShowCountdown(false)
       setIsSelecting(true)
-      const selectionDuration = 2000 // 2 seconds
-      const intervalTime = 100 // Change student every 100ms
+      const selectionDuration = 2000
+      const intervalTime = 100
       const startTime = Date.now()
 
       const interval = setInterval(() => {
@@ -95,7 +111,7 @@ export function QuestionCard({
           setIsSelecting(false)
           const selected = getRandomStudent()
           setSelectedStudent(selected)
-          playSound("success")
+          playSound("complete")
         } else {
           setSelectedStudent(getRandomStudent())
           playSound("click")
@@ -109,37 +125,84 @@ export function QuestionCard({
   useEffect(() => {
     if (selectedStudent && !showResult) {
       setTimerActive(true)
-      setTimeLeft(30)
+      setTimeLeft(initialTime)
+      setIsPaused(false)
+    } else {
+      setTimerActive(false)
     }
-  }, [selectedStudent])
+  }, [selectedStudent, showResult, initialTime])
 
-  const handleTimeUp = () => {
-    setTimerActive(false)
-    setShowResult(true)
-    setIsCorrect(false)
-    playSound("incorrect")
+  useEffect(() => {
+    return () => {
+      setTimerActive(false)
+      setTimeLeft(initialTime)
+    }
+  }, [initialTime])
+
+  useEffect(() => {
+    if (showResult) {
+      setTimerActive(false)
+    }
+  }, [showResult])
+
+  useEffect(() => {
+    if (isPaused) {
+      setTimerActive(false)
+    }
+  }, [isPaused])
+
+  const handlePauseResume = () => {
+    if (isPaused) {
+      // Resuming
+      setIsPaused(false)
+      setTimerActive(true)
+    } else {
+      // Pausing
+      setIsPaused(true)
+      setTimerActive(false)
+    }
   }
 
-  const handleOptionSelect = async (optionIndex: number) => {
-    if (selectedOption !== null || !selectedStudent) return
-
-    setSelectedOption(optionIndex)
-    setTimerActive(false)
-    const isCorrect = optionIndex === question.correctOption
-
-    if (isCorrect) {
-      playSound("correct")
-      confetti({
-        particleCount: 100,
-        spread: 70,
-        origin: { y: 0.6 },
-      })
-    } else {
-      playSound("incorrect")
+  const handleAddTime = () => {
+    if (timerActive && !showResult) {
+      setTimeLeft(prev => prev + 60)
+      playSound("click")
     }
+  }
 
-    setShowResult(true)
-    await onAnswer(isCorrect, selectedStudent.id)
+  const handleSetCustomTime = (seconds: number) => {
+    if (!timerActive || selectedStudent === null) {
+      setInitialTime(seconds)
+      setTimeLeft(seconds)
+      playSound("click")
+    }
+  }
+
+  const handleSubmitAnswer = useCallback(async () => {
+    if (selectedOption !== null && selectedStudent) {
+      setTimerActive(false)
+      const isCorrect = selectedOption === question.correctOption
+      setIsCorrect(isCorrect)
+
+      if (isCorrect) {
+        playSound("correct")
+        confetti({
+          particleCount: 100,
+          spread: 70,
+          origin: { y: 0.6 },
+        })
+      } else {
+        playSound("incorrect")
+      }
+
+      setShowResult(true)
+      await onAnswer(isCorrect, selectedStudent.id)
+    }
+  }, [selectedOption, selectedStudent, question.correctOption, playSound, onAnswer])
+
+  const handleOptionSelect = (optionIndex: number) => {
+    if (selectedOption !== null || !selectedStudent || timeLeft === 0 || !timerActive) return
+    setSelectedOption(optionIndex)
   }
 
   const handleNext = () => {
@@ -147,6 +210,7 @@ export function QuestionCard({
     setSelectedOption(null)
     setShowResult(false)
     if (isLast) {
+      playSound("complete")
       onEnd()
     } else {
       onNext()
@@ -164,7 +228,9 @@ export function QuestionCard({
   }
 
   const formatTime = (seconds: number): string => {
-    return `${seconds}s`
+    const minutes = Math.floor(seconds / 60)
+    const remainingSeconds = seconds % 60
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`
   }
 
   const getDifficultyColor = (difficulty: string) => {
@@ -186,6 +252,11 @@ export function QuestionCard({
     return "bg-red-500"
   }
 
+  const handleEndQuiz = () => {
+    playSound("complete")
+    onEnd()
+  }
+
   return (
     <div className="space-y-6">
       <Card className="overflow-hidden rounded-2xl bg-gradient-to-br from-white to-gray-50 shadow-xl dark:from-gray-800 dark:to-gray-900">
@@ -197,20 +268,56 @@ export function QuestionCard({
           <CardTitle className="mt-2">{question.question}</CardTitle>
           <CardDescription>Select a student to answer this question</CardDescription>
           {selectedStudent && (
-            <div className="mt-4 space-y-2">
-              <div className="flex items-center justify-between text-sm">
+            <div className="mt-4 space-y-4">
+              <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Clock className="h-4 w-4" />
                   <span>Time Remaining:</span>
                 </div>
-                <span>{formatTime(timeLeft)}</span>
+                <div className="flex items-center gap-2">
+                  <span>{formatTime(timeLeft)}</span>
+                  {!showResult && (
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handlePauseResume}
+                        className="h-8 px-2"
+                      >
+                        {isPaused ? "Resume" : "Pause"}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleAddTime}
+                        className="h-8 px-2"
+                      >
+                        +1 Min
+                      </Button>
+                    </>
+                  )}
+                </div>
               </div>
-              <Progress value={(timeLeft / 30) * 100} className={getProgressColor((timeLeft / 30) * 100)} />
+              <Progress value={(timeLeft / initialTime) * 100} className={getProgressColor((timeLeft / initialTime) * 100)} />
+              {!selectedStudent && (
+                <div className="flex justify-center gap-2 mt-2">
+                  {[30, 60, 120].map((seconds) => (
+                    <Button
+                      key={seconds}
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleSetCustomTime(seconds)}
+                      className={`h-8 px-2 ${initialTime === seconds ? 'bg-primary text-primary-foreground' : ''}`}
+                    >
+                      {formatTime(seconds)}
+                    </Button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </CardHeader>
         <CardContent className="space-y-6 p-6">
-          {/* Student Selection Section */}
           <div className="relative flex min-h-[100px] items-center justify-center rounded-xl border bg-gradient-to-r from-indigo-50 to-purple-50 p-6 dark:border-gray-700 dark:from-indigo-900/20 dark:to-purple-900/20">
             <AnimatePresence mode="wait">
               {!selectedStudent && !isSelecting && !showCountdown && (
@@ -298,18 +405,19 @@ export function QuestionCard({
             </AnimatePresence>
           </div>
 
-          {/* Options Section */}
           <div className="grid gap-4">
             {question.options.map((option, index) => (
               <motion.button
                 key={index}
                 onClick={() => handleOptionSelect(index)}
-                disabled={!selectedStudent || selectedOption !== null}
+                disabled={selectedOption !== null || timeLeft === 0 || !timerActive}
                 className={`relative flex w-full items-center justify-between rounded-xl border p-4 text-left transition-colors ${
-                  selectedOption === null
+                  selectedOption === null && (!selectedStudent || (timeLeft > 0 && timerActive))
                     ? "hover:border-primary hover:bg-primary/5"
-                    : index === question.correctOption
+                    : index === question.correctOption && showResult
                     ? "border-green-500 bg-green-500/10"
+                    : selectedOption === index && !showResult
+                    ? "border-indigo-500 bg-indigo-500/10"
                     : selectedOption === index
                     ? "border-red-500 bg-red-500/10"
                     : "opacity-50"
@@ -318,28 +426,35 @@ export function QuestionCard({
                 whileTap={{ scale: selectedOption === null ? 0.98 : 1 }}
               >
                 <span>{option}</span>
-                {showResult && index === question.correctOption && (
-                  <CheckCircle className="h-5 w-5 text-green-500" />
-                )}
-                {showResult && selectedOption === index && index !== question.correctOption && (
-                  <XCircle className="h-5 w-5 text-red-500" />
+                {showResult && (
+                  <>
+                    {index === question.correctOption && (
+                      <CheckCircle className="h-5 w-5 text-green-500" />
+                    )}
+                    {selectedOption === index && index !== question.correctOption && (
+                      <XCircle className="h-5 w-5 text-red-500" />
+                    )}
+                  </>
                 )}
               </motion.button>
             ))}
           </div>
         </CardContent>
         <CardFooter className="flex justify-between border-t p-6 dark:border-gray-700">
-          <Button variant="outline" onClick={onEnd}>
+          <Button variant="outline" onClick={handleEndQuiz}>
             End Quiz
           </Button>
 
-          {!showResult ? (
-            <Button onClick={handleOptionSelect} disabled={selectedOption === null || !selectedStudent}>
+          {selectedStudent && !showResult ? (
+            <Button 
+              onClick={handleSubmitAnswer}
+              disabled={selectedOption === null || !selectedStudent || timeLeft === 0 || !timerActive}
+            >
               Submit Answer
             </Button>
-          ) : (
+          ) : showResult ? (
             <Button onClick={handleNext}>{isLast ? "Finish Quiz" : "Next Question"}</Button>
-          )}
+          ) : null}
         </CardFooter>
       </Card>
 
