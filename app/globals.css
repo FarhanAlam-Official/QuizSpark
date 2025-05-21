@@ -61,3 +61,42 @@
     @apply bg-background text-foreground;
   }
 }
+
+@layer components {
+  /* Dashboard card styles */
+  .dashboard-card {
+    @apply rounded-lg border bg-card text-card-foreground shadow-sm transition-all duration-300;
+  }
+  
+  .dashboard-card:hover {
+    @apply shadow-lg shadow-primary/10 dark:shadow-primary/5 -translate-y-1;
+  }
+
+  /* Action button styles */
+  .action-button {
+    @apply relative overflow-hidden transition-all duration-300;
+  }
+
+  .action-button::after {
+    content: '';
+    @apply absolute inset-0 -translate-x-full;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.2),
+      transparent
+    );
+    animation: shine 1.5s infinite;
+  }
+
+  @keyframes shine {
+    100% {
+      transform: translateX(100%);
+    }
+  }
+
+  /* Small interactive button styles */
+  .interactive-button {
+    @apply transition-transform duration-200 active:scale-95 hover:scale-105;
+  }
+}
