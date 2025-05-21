@@ -19,14 +19,16 @@ export function VisualStudentPicker({ students, excludeIds = [], onStudentPicked
   const [availableStudents, setAvailableStudents] = useState<Student[]>([])
   const [isSelecting, setIsSelecting] = useState(true)
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null)
-  const [displayedStudents, setDisplayedStudents] = useState<Student[]>([])
+  const [displayedStudent, setDisplayedStudent] = useState<Student | null>(null)
   const selectionInterval = useRef<NodeJS.Timeout>()
   const { playSound } = useSound()
 
   useEffect(() => {
     const filtered = students.filter((student) => !excludeIds.includes(Number(student.id)))
     setAvailableStudents(filtered)
-    setDisplayedStudents([filtered[0]]) // Start with first student
+    if (filtered.length > 0) {
+      setDisplayedStudent(filtered[0])
+    }
   }, [students, excludeIds])
 
   useEffect(() => {
@@ -42,7 +44,7 @@ export function VisualStudentPicker({ students, excludeIds = [], onStudentPicked
         // Slow down the updates as we progress
         if (Math.random() < (1 - progress)) {
           const randomStudent = availableStudents[Math.floor(Math.random() * availableStudents.length)]
-          setDisplayedStudents([randomStudent])
+          setDisplayedStudent(randomStudent)
           playSound("tick")
         }
 
@@ -50,7 +52,7 @@ export function VisualStudentPicker({ students, excludeIds = [], onStudentPicked
           clearInterval(selectionInterval.current)
           const winner = availableStudents[Math.floor(Math.random() * availableStudents.length)]
           setSelectedStudent(winner)
-          setDisplayedStudents([winner])
+          setDisplayedStudent(winner)
           setIsSelecting(false)
           playSound("success")
 
@@ -118,32 +120,42 @@ export function VisualStudentPicker({ students, excludeIds = [], onStudentPicked
       </div>
 
       <div className="relative w-full max-w-md">
-        <div className="h-[200px] rounded-lg border bg-gradient-to-br from-indigo-50/50 to-purple-50/50 dark:from-indigo-950/50 dark:to-purple-950/50 flex items-center justify-center">
+        <div className="h-[200px] rounded-lg border bg-gradient-to-br from-indigo-50/50 to-purple-50/50 dark:from-indigo-950/50 dark:to-purple-950/50 flex items-center justify-center overflow-hidden">
           <AnimatePresence mode="wait">
-            {displayedStudents.map((student) => (
+            {displayedStudent && (
               <motion.div
-                key={student.id}
-                initial={{ scale: 0.8, opacity: 0 }}
+                key={isSelecting ? 'selecting-' + displayedStudent.id : 'selected-' + displayedStudent.id}
+                initial={{ scale: 0.8, opacity: 0, y: 20 }}
                 animate={{ 
                   scale: 1, 
                   opacity: 1,
-                  y: [0, -10, 0]
+                  y: 0,
+                  transition: {
+                    duration: isSelecting ? 0.2 : 0.5,
+                    ease: isSelecting ? "easeOut" : "spring"
+                  }
                 }}
-                exit={{ scale: 0.8, opacity: 0 }}
-                transition={{ 
-                  duration: 0.3,
-                  y: { duration: 1, repeat: Infinity }
-                }}
+                exit={{ scale: 0.8, opacity: 0, y: -20 }}
                 className={`w-[80%] p-6 rounded-lg text-center ${
                   !isSelecting 
                     ? "bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg"
                     : "bg-white dark:bg-gray-800 shadow"
                 }`}
               >
-                <h4 className="text-2xl font-bold mb-2">{student.name}</h4>
-                <p className="text-sm opacity-75">Group {student.group}</p>
+                <motion.h4 
+                  className="text-2xl font-bold mb-2"
+                  animate={isSelecting ? {
+                    scale: [1, 1.1, 1],
+                    transition: { duration: 0.3, repeat: Infinity }
+                  } : {}}
+                >
+                  {displayedStudent.name}
+                </motion.h4>
+                <p className={`text-sm ${!isSelecting ? "text-white/75" : "text-muted-foreground"}`}>
+                  Group {displayedStudent.group}
+                </p>
               </motion.div>
-            ))}
+            )}
           </AnimatePresence>
         </div>
       </div>
