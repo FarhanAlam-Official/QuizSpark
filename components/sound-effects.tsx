@@ -4,7 +4,7 @@ import type React from "react"
 
 import { createContext, useContext, useEffect, useRef } from "react"
 
-type SoundType = "correct" | "incorrect" | "select" | "complete" | "click"
+type SoundType = "correct" | "incorrect" | "select" | "complete" | "click" | "tick" | "fail"
 
 interface SoundContextType {
   playSound: (sound: SoundType) => void
@@ -18,6 +18,8 @@ export function SoundProvider({ children }: { children: React.ReactNode }) {
   const selectSoundRef = useRef<HTMLAudioElement | null>(null)
   const completeSoundRef = useRef<HTMLAudioElement | null>(null)
   const clickSoundRef = useRef<HTMLAudioElement | null>(null)
+  const tickSoundRef = useRef<HTMLAudioElement | null>(null)
+  const failSoundRef = useRef<HTMLAudioElement | null>(null)
 
   useEffect(() => {
     // Create audio elements
@@ -26,6 +28,8 @@ export function SoundProvider({ children }: { children: React.ReactNode }) {
     selectSoundRef.current = new Audio()
     completeSoundRef.current = new Audio()
     clickSoundRef.current = new Audio()
+    tickSoundRef.current = new Audio()
+    failSoundRef.current = new Audio()
 
     // Set sources
     if (correctSoundRef.current) correctSoundRef.current.src = "/sounds/correct.mp3"
@@ -33,6 +37,8 @@ export function SoundProvider({ children }: { children: React.ReactNode }) {
     if (selectSoundRef.current) selectSoundRef.current.src = "/sounds/select.mp3"
     if (completeSoundRef.current) completeSoundRef.current.src = "/sounds/complete.mp3"
     if (clickSoundRef.current) clickSoundRef.current.src = "/sounds/click.mp3"
+    if (tickSoundRef.current) tickSoundRef.current.src = "/sounds/tick.mp3"
+    if (failSoundRef.current) failSoundRef.current.src = "/sounds/fail.mp3"
 
     // Preload audio files
     const preloadAudio = (audio: HTMLAudioElement | null) => {
@@ -46,6 +52,8 @@ export function SoundProvider({ children }: { children: React.ReactNode }) {
     preloadAudio(selectSoundRef.current)
     preloadAudio(completeSoundRef.current)
     preloadAudio(clickSoundRef.current)
+    preloadAudio(tickSoundRef.current)
+    preloadAudio(failSoundRef.current)
 
     return () => {
       // Clean up audio elements
@@ -54,6 +62,8 @@ export function SoundProvider({ children }: { children: React.ReactNode }) {
       selectSoundRef.current = null
       completeSoundRef.current = null
       clickSoundRef.current = null
+      tickSoundRef.current = null
+      failSoundRef.current = null
     }
   }, [])
 
@@ -75,6 +85,12 @@ export function SoundProvider({ children }: { children: React.ReactNode }) {
         break
       case "click":
         audioRef = clickSoundRef
+        break
+      case "tick":
+        audioRef = tickSoundRef
+        break
+      case "fail":
+        audioRef = failSoundRef
         break
       default:
         return

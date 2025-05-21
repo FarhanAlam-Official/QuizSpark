@@ -14,6 +14,7 @@ $sounds = @{
     "incorrect.mp3" = "https://assets.mixkit.co/active_storage/sfx/2691/2691-preview.mp3"
     "select.mp3" = "https://assets.mixkit.co/active_storage/sfx/2570/2570-preview.mp3"
     "complete.mp3" = "https://assets.mixkit.co/active_storage/sfx/1435/1435-preview.mp3"
+    "fail.mp3" = "https://assets.mixkit.co/active_storage/sfx/2572/2572-preview.mp3"
 }
 
 # Download each sound file

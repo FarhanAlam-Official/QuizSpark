@@ -34,6 +34,10 @@ export default function QuizPage() {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
   const [quizResults, setQuizResults] = useState<Array<{ studentId: number | null; correct: boolean }>>([])
 
+  // Add new state for custom question count
+  const [customQuestionCount, setCustomQuestionCount] = useState<string>("")
+  const [showCustomCount, setShowCustomCount] = useState(false)
+
   useEffect(() => {
     if (!loading) {
       // Extract unique topics with question counts
@@ -166,6 +170,14 @@ export default function QuizPage() {
     }
   }
 
+  const handleCustomQuestionCount = (value: string) => {
+    const num = parseInt(value)
+    if (!isNaN(num) && num > 0) {
+      setSelectedQuestionCount(num)
+    }
+    setCustomQuestionCount(value)
+  }
+
   if (loading) {
     return (
       <div className="flex h-[calc(100vh-4rem)] items-center justify-center">
@@ -208,73 +220,106 @@ export default function QuizPage() {
                   <div className="grid gap-6 md:grid-cols-2">
                     <div className="space-y-4">
                       <Label>Topic</Label>
-                      <div className="flex flex-wrap gap-2">
-                        <Badge
-                          variant={topic === "all" ? "default" : "outline"}
-                          className="cursor-pointer"
-                          onClick={() => setTopic("all")}
-                        >
-                          All Topics
-                        </Badge>
-                        {topics.map((t) => (
+                      <div className="max-h-[200px] overflow-y-auto rounded-lg border p-4 scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600">
+                        <div className="flex flex-wrap gap-2">
                           <Badge
-                            key={t.name}
-                            variant={topic === t.name ? "default" : "outline"}
+                            variant={topic === "all" ? "default" : "outline"}
                             className="cursor-pointer"
-                            onClick={() => setTopic(t.name)}
+                            onClick={() => setTopic("all")}
                           >
-                            {t.name} ({t.count})
+                            All Topics
                           </Badge>
-                        ))}
+                          {topics.map((t) => (
+                            <Badge
+                              key={t.name}
+                              variant={topic === t.name ? "default" : "outline"}
+                              className="cursor-pointer whitespace-nowrap"
+                              onClick={() => setTopic(t.name)}
+                            >
+                              {t.name} ({t.count})
+                            </Badge>
+                          ))}
+                        </div>
                       </div>
                     </div>
 
                     <div className="space-y-4">
                       <Label>Difficulty</Label>
-                      <div className="flex flex-wrap gap-2">
-                        <Badge
-                          variant={difficulty === "all" ? "default" : "outline"}
-                          className="cursor-pointer"
-                          onClick={() => setDifficulty("all")}
-                        >
-                          All Difficulties
-                        </Badge>
-                        {["Easy", "Normal", "Hard"].map((d) => (
+                      <div className="rounded-lg border p-4">
+                        <div className="flex flex-wrap gap-2">
                           <Badge
-                            key={d}
-                            variant={difficulty === d ? "default" : "outline"}
+                            variant={difficulty === "all" ? "default" : "outline"}
                             className="cursor-pointer"
-                            onClick={() => setDifficulty(d)}
+                            onClick={() => setDifficulty("all")}
                           >
-                            {d}
+                            All Difficulties
                           </Badge>
-                        ))}
+                          {["Easy", "Normal", "Hard"].map((d) => (
+                            <Badge
+                              key={d}
+                              variant={difficulty === d ? "default" : "outline"}
+                              className="cursor-pointer"
+                              onClick={() => setDifficulty(d)}
+                            >
+                              {d}
+                            </Badge>
+                          ))}
+                        </div>
                       </div>
                     </div>
                   </div>
 
                   <div className="space-y-4">
-                    <Label>Number of Questions</Label>
-                    <div className="flex flex-wrap gap-2">
-                      {[5, 10, 15, 20].map((count) => (
-                        <Badge
-                          key={count}
-                          variant={selectedQuestionCount === count ? "default" : "outline"}
-                          className="cursor-pointer"
-                          onClick={() => setSelectedQuestionCount(count)}
-                        >
-                          {count} Questions
-                        </Badge>
-                      ))}
+                    <div className="flex items-center justify-between">
+                      <Label>Number of Questions</Label>
+                      <Button
+                        variant="ghost"
+                        className="h-auto p-0 text-xs text-muted-foreground"
+                        onClick={() => setShowCustomCount(!showCustomCount)}
+                      >
+                        {showCustomCount ? "Show Presets" : "Custom Count"}
+                      </Button>
                     </div>
+                    {showCustomCount ? (
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          value={customQuestionCount}
+                          onChange={(e) => handleCustomQuestionCount(e.target.value)}
+                          placeholder="Enter number of questions"
+                          min="1"
+                          className="w-full rounded-lg border p-2"
+                        />
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                        {[5, 10, 15, 20, 25, 30, 40, 50].map((count) => (
+                          <Badge
+                            key={count}
+                            variant={selectedQuestionCount === count ? "default" : "outline"}
+                            className="cursor-pointer text-center"
+                            onClick={() => setSelectedQuestionCount(count)}
+                          >
+                            {count} Questions
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   <Alert>
                     <BookOpenCheck className="h-4 w-4" />
                     <AlertTitle>Selected Question Set</AlertTitle>
-                    <AlertDescription>
-                      {filteredQuestions.length} questions available from {topic === "all" ? "all topics" : topic} 
-                      {difficulty !== "all" ? ` with ${difficulty} difficulty` : ""}
+                    <AlertDescription className="space-y-2">
+                      <div>
+                        {filteredQuestions.length} questions available from {topic === "all" ? "all topics" : `"${topic}"`} 
+                        {difficulty !== "all" ? ` with ${difficulty} difficulty` : ""}
+                      </div>
+                      {filteredQuestions.length < selectedQuestionCount && (
+                        <div className="text-yellow-600 dark:text-yellow-400">
+                          Note: Only {filteredQuestions.length} questions available with current filters
+                        </div>
+                      )}
                     </AlertDescription>
                   </Alert>
                 </TabsContent>
