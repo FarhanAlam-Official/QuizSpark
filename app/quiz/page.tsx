@@ -425,6 +425,8 @@ export default function QuizPage() {
           onNext={handleNextQuestion}
           onEnd={handleEndQuiz}
           isLast={currentQuestionIndex === filteredQuestions.length - 1}
+          currentQuestionIndex={currentQuestionIndex}
+          totalQuestions={filteredQuestions.length}
         />
       )}
     </div>

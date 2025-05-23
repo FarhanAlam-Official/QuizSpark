@@ -23,6 +23,8 @@ interface QuestionCardProps {
   onNext: () => void
   onEnd: () => void
   isLast: boolean
+  currentQuestionIndex: number
+  totalQuestions: number
 }
 
 export function QuestionCard({
@@ -33,6 +35,8 @@ export function QuestionCard({
   onNext,
   onEnd,
   isLast,
+  currentQuestionIndex,
+  totalQuestions,
 }: QuestionCardProps) {
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null)
   const [isSelecting, setIsSelecting] = useState(false)
@@ -263,7 +267,10 @@ export function QuestionCard({
         <CardHeader className="border-b dark:border-gray-700">
           <div className="flex items-center justify-between">
             <Badge className={getDifficultyColor(question.difficulty)}>{question.difficulty}</Badge>
-            <Badge variant="outline">{question.topic}</Badge>
+            <div className="flex items-center gap-2">
+              <Badge variant="outline">{question.topic}</Badge>
+              <Badge variant="secondary">Question {currentQuestionIndex + 1} of {totalQuestions}</Badge>
+            </div>
           </div>
           <CardTitle className="mt-2">{question.question}</CardTitle>
           <CardDescription>Select a student to answer this question</CardDescription>
