@@ -9,7 +9,7 @@ import { Progress } from "@/components/ui/progress"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
-import { Clock, CheckCircle, XCircle, UserPlus } from "lucide-react"
+import { Clock, CheckCircle, XCircle, UserPlus, Users } from "lucide-react"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { VisualStudentPicker } from "@/components/visual-student-picker"
 import { useSound } from "@/components/sound-effects"
@@ -25,6 +25,9 @@ interface QuestionCardProps {
   isLast: boolean
   currentQuestionIndex: number
   totalQuestions: number
+  currentGroup?: string | null
+  isGroupMode?: boolean
+  onPassTurn?: () => void
 }
 
 export function QuestionCard({
@@ -37,6 +40,9 @@ export function QuestionCard({
   isLast,
   currentQuestionIndex,
   totalQuestions,
+  currentGroup,
+  isGroupMode,
+  onPassTurn,
 }: QuestionCardProps) {
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null)
   const [isSelecting, setIsSelecting] = useState(false)
@@ -51,6 +57,7 @@ export function QuestionCard({
   const [showCountdown, setShowCountdown] = useState(false)
   const [countdown, setCountdown] = useState(3)
   const [isPaused, setIsPaused] = useState(false)
+  const [submittedAnswer, setSubmittedAnswer] = useState(false)
 
   const handleTimeUp = () => {
     setTimerActive(false)
@@ -61,7 +68,7 @@ export function QuestionCard({
   }
 
   const getRandomStudent = useCallback(() => {
-    const unpickedStudents = students.filter((s) => !pickedStudentIds.includes(s.id))
+    const unpickedStudents = students.filter((s) => !pickedStudentIds.includes(s.id.toString()))
     const availableStudents = unpickedStudents.length > 0 ? unpickedStudents : students
     return availableStudents[Math.floor(Math.random() * availableStudents.length)]
   }, [students, pickedStudentIds])
@@ -187,6 +194,7 @@ export function QuestionCard({
       setTimerActive(false)
       const isCorrect = selectedOption === question.correctOption
       setIsCorrect(isCorrect)
+      setSubmittedAnswer(true)
 
       if (isCorrect) {
         playSound("correct")
@@ -200,13 +208,23 @@ export function QuestionCard({
       }
 
       setShowResult(true)
-      await onAnswer(isCorrect, selectedStudent.id)
+      await onAnswer(isCorrect, selectedStudent.id.toString())
     }
   }, [selectedOption, selectedStudent, question.correctOption, playSound, onAnswer])
 
   const handleOptionSelect = (optionIndex: number) => {
-    if (selectedOption !== null || !selectedStudent || timeLeft === 0 || !timerActive) return
+    if (showResult || !selectedStudent || timeLeft === 0 || !timerActive) return
     setSelectedOption(optionIndex)
+  }
+
+  const handlePassTurn = () => {
+    if (onPassTurn) {
+      setSelectedStudent(null)
+      setSelectedOption(null)
+      setTimeLeft(initialTime)
+      setTimerActive(false)
+      onPassTurn()
+    }
   }
 
   const handleNext = () => {
@@ -261,19 +279,34 @@ export function QuestionCard({
     onEnd()
   }
 
+  // Reset submittedAnswer when question changes
+  useEffect(() => {
+    setSubmittedAnswer(false)
+  }, [question])
+
   return (
     <div className="space-y-6">
       <Card className="overflow-hidden rounded-2xl bg-gradient-to-br from-white to-gray-50 shadow-xl dark:from-gray-800 dark:to-gray-900">
         <CardHeader className="border-b dark:border-gray-700">
           <div className="flex items-center justify-between">
-            <Badge className={getDifficultyColor(question.difficulty)}>{question.difficulty}</Badge>
+            <div className="flex items-center gap-2">
+              <Badge className={getDifficultyColor(question.difficulty)}>{question.difficulty}</Badge>
+              {isGroupMode && currentGroup && (
+                <Badge variant="secondary">Current Turn: Group {currentGroup}</Badge>
+              )}
+            </div>
             <div className="flex items-center gap-2">
               <Badge variant="outline">{question.topic}</Badge>
               <Badge variant="secondary">Question {currentQuestionIndex + 1} of {totalQuestions}</Badge>
             </div>
           </div>
           <CardTitle className="mt-2">{question.question}</CardTitle>
-          <CardDescription>Select a student to answer this question</CardDescription>
+          <CardDescription>
+            {isGroupMode 
+              ? `Group ${currentGroup}: Select a student to answer this question`
+              : "Select a student to answer this question"
+            }
+          </CardDescription>
           {selectedStudent && (
             <div className="mt-4 space-y-4">
               <div className="flex items-center justify-between">
@@ -417,40 +450,87 @@ export function QuestionCard({
               <motion.button
                 key={index}
                 onClick={() => handleOptionSelect(index)}
-                disabled={selectedOption !== null || timeLeft === 0 || !timerActive}
-                className={`relative flex w-full items-center justify-between rounded-xl border p-4 text-left transition-colors ${
-                  selectedOption === null && (!selectedStudent || (timeLeft > 0 && timerActive))
-                    ? "hover:border-primary hover:bg-primary/5"
+                disabled={!selectedStudent || timeLeft === 0 || !timerActive || showResult}
+                className={`relative flex w-full items-center justify-between rounded-xl border p-4 text-left transition-all duration-200 ${
+                  !showResult && selectedStudent && timeLeft > 0 && timerActive
+                    ? selectedOption === index 
+                      ? "border-transparent bg-gradient-to-r from-purple-500/20 to-indigo-500/20 shadow-lg shadow-purple-500/10 dark:from-purple-500/30 dark:to-indigo-500/30"
+                      : "border-gray-200 bg-white hover:border-transparent hover:bg-gradient-to-r hover:from-indigo-50 hover:to-purple-50 hover:shadow-md dark:border-gray-700 dark:bg-gray-800 dark:hover:from-indigo-900/30 dark:hover:to-purple-900/30"
                     : index === question.correctOption && showResult
-                    ? "border-green-500 bg-green-500/10"
-                    : selectedOption === index && !showResult
-                    ? "border-indigo-500 bg-indigo-500/10"
-                    : selectedOption === index
-                    ? "border-red-500 bg-red-500/10"
-                    : "opacity-50"
+                    ? "border-transparent bg-gradient-to-r from-green-500/20 to-emerald-500/20 shadow-lg shadow-green-500/10 dark:from-green-500/30 dark:to-emerald-500/30"
+                    : selectedOption === index && showResult
+                    ? "border-transparent bg-gradient-to-r from-red-500/20 to-pink-500/20 shadow-lg shadow-red-500/10 dark:from-red-500/30 dark:to-pink-500/30"
+                    : "border-gray-200 bg-white/50 dark:border-gray-700 dark:bg-gray-800/50 opacity-50"
                 }`}
-                whileHover={{ scale: selectedOption === null ? 1.02 : 1 }}
-                whileTap={{ scale: selectedOption === null ? 0.98 : 1 }}
+                whileHover={{ 
+                  scale: !showResult && selectedStudent && timeLeft > 0 && timerActive ? 1.02 : 1,
+                }}
+                whileTap={{ 
+                  scale: !showResult && selectedStudent && timeLeft > 0 && timerActive ? 0.98 : 1,
+                }}
               >
-                <span>{option}</span>
-                {showResult && (
-                  <>
-                    {index === question.correctOption && (
-                      <CheckCircle className="h-5 w-5 text-green-500" />
+                <div className="flex items-center justify-between w-full">
+                  <div className="flex items-center gap-3">
+                    <div className={`flex h-6 w-6 items-center justify-center rounded-full text-sm font-medium ${
+                      !showResult && selectedOption === index
+                        ? "bg-purple-500 text-white"
+                        : showResult && index === question.correctOption
+                        ? "bg-green-500 text-white"
+                        : showResult && selectedOption === index
+                        ? "bg-red-500 text-white"
+                        : "bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400"
+                    }`}>
+                      {String.fromCharCode(65 + index)}
+                    </div>
+                    <span className={`font-medium ${
+                      !showResult && selectedOption === index
+                        ? "text-purple-700 dark:text-purple-300"
+                        : showResult && (index === question.correctOption || selectedOption === index)
+                        ? "text-gray-900 dark:text-gray-100"
+                        : "text-gray-600 dark:text-gray-300"
+                    }`}>{option}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {!showResult && selectedOption === index && (
+                      <div className="flex items-center gap-2 text-sm font-medium text-purple-600 dark:text-purple-400">
+                        <div className="h-2 w-2 rounded-full bg-purple-500 animate-pulse"></div>
+                        Selected
+                      </div>
                     )}
-                    {selectedOption === index && index !== question.correctOption && (
-                      <XCircle className="h-5 w-5 text-red-500" />
+                    {showResult && (
+                      <>
+                        {index === question.correctOption && (
+                          <div className="flex items-center gap-2">
+                            <CheckCircle className="h-5 w-5 text-green-500" />
+                            <span className="text-sm font-medium text-green-600 dark:text-green-400">Correct</span>
+                          </div>
+                        )}
+                        {selectedOption === index && index !== question.correctOption && (
+                          <div className="flex items-center gap-2">
+                            <XCircle className="h-5 w-5 text-red-500" />
+                            <span className="text-sm font-medium text-red-600 dark:text-red-400">Incorrect</span>
+                          </div>
+                        )}
+                      </>
                     )}
-                  </>
-                )}
+                  </div>
+                </div>
               </motion.button>
             ))}
           </div>
         </CardContent>
         <CardFooter className="flex justify-between border-t p-6 dark:border-gray-700">
-          <Button variant="outline" onClick={handleEndQuiz}>
-            End Quiz
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={handleEndQuiz}>
+              End Quiz
+            </Button>
+            {isGroupMode && !showResult && !submittedAnswer && onPassTurn && (
+              <Button variant="outline" onClick={handlePassTurn} className="gap-2">
+                <Users className="h-4 w-4" />
+                Pass to Next Group
+              </Button>
+            )}
+          </div>
 
           {selectedStudent && !showResult ? (
             <Button 

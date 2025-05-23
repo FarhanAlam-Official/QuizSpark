@@ -25,14 +25,16 @@ export default function QuizPage() {
   const [topics, setTopics] = useState<Array<{ name: string, count: number }>>([])
   const [pickedStudentIds, setPickedStudentIds] = useState<number[]>([])
   const [quizMode, setQuizMode] = useState<"individual" | "group">("individual")
-  const [selectedGroup, setSelectedGroup] = useState<string | undefined>(undefined)
+  const [selectedGroups, setSelectedGroups] = useState<string[]>([])
   const [groups, setGroups] = useState<string[]>([])
+  const [groupScores, setGroupScores] = useState<Record<string, number>>({})
+  const [currentGroup, setCurrentGroup] = useState<string | null>(null)
   const [groupParticipation, setGroupParticipation] = useState<Record<string, number>>({})
   const [selectedQuestionCount, setSelectedQuestionCount] = useState<number>(5)
 
   const [quizStarted, setQuizStarted] = useState(false)
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
-  const [quizResults, setQuizResults] = useState<Array<{ studentId: number | null; correct: boolean }>>([])
+  const [quizResults, setQuizResults] = useState<Array<{ studentId: string | null; correct: boolean; group?: string }>>([])
 
   // Add new state for custom question count
   const [customQuestionCount, setCustomQuestionCount] = useState<string>("")
@@ -87,47 +89,60 @@ export default function QuizPage() {
     setFilteredQuestions(filtered)
   }, [difficulty, topic, questions, selectedQuestionCount])
 
-  const startQuiz = () => {
-    if (filteredQuestions.length === 0) return
-
-    setQuizStarted(true)
-    setCurrentQuestionIndex(0)
-    setQuizResults([])
-    setPickedStudentIds([])
-    setGroupParticipation({})
-  }
-
   const handleAnswer = async (isCorrect: boolean, studentId: number | null) => {
-    setQuizResults([...quizResults, { studentId, correct: isCorrect }])
+    setQuizResults([...quizResults, { studentId, correct: isCorrect, group: currentGroup }])
 
-    // Award points if correct and student is selected
-    if (isCorrect && studentId) {
-      const currentQuestion = filteredQuestions[currentQuestionIndex]
-      const points = getPointsForDifficulty(currentQuestion.difficulty)
-      const student = students.find(s => s.id === studentId)
-      
-      if (student) {
-        try {
-          await updateStudent(studentId, {
-            score: student.score + points
-          })
+    // Award points if correct
+    if (isCorrect) {
+      if (studentId) {
+        const currentQuestion = filteredQuestions[currentQuestionIndex]
+        const points = getPointsForDifficulty(currentQuestion.difficulty)
+        const student = students.find(s => s.id === studentId)
+        
+        if (student && student.group) {
+          // Update group score
+          setGroupScores(prev => ({
+            ...prev,
+            [student.group]: (prev[student.group] || 0) + points
+          }))
           
-          // Track group participation if in group mode
-          if (quizMode === "group" && student.group) {
+          // Update individual score
+          try {
+            await updateStudent(studentId, {
+              score: student.score + points
+            })
+            
+            // Track group participation
             setGroupParticipation(prev => ({
               ...prev,
               [student.group]: (prev[student.group] || 0) + 1
             }))
+
+            // Add to picked students
+            if (!pickedStudentIds.includes(studentId)) {
+              setPickedStudentIds(prev => [...prev, studentId])
+            }
+          } catch (error) {
+            console.error('Failed to update student score:', error)
           }
-          
-          // In individual mode, add to picked students
-          if (quizMode === "individual" && !pickedStudentIds.includes(studentId)) {
-            setPickedStudentIds([...pickedStudentIds, studentId])
-          }
-        } catch (error) {
-          console.error('Failed to update student score:', error)
         }
       }
+    }
+
+    // Move to next group after answer submission
+    if (quizMode === "group" && selectedGroups.length > 1) {
+      const nextGroup = getNextGroup()
+      setCurrentGroup(nextGroup)
+      // Reset picked students when switching groups
+      setPickedStudentIds([])
+    }
+  }
+
+  const handlePassTurn = () => {
+    if (quizMode === "group" && selectedGroups.length > 1) {
+      const nextGroup = getNextGroup()
+      setCurrentGroup(nextGroup)
+      setPickedStudentIds([])
     }
   }
 
@@ -154,14 +169,39 @@ export default function QuizPage() {
     router.push("/leaderboard")
   }
 
+  const getNextGroup = () => {
+    const currentIndex = selectedGroups.indexOf(currentGroup || "")
+    const nextIndex = (currentIndex + 1) % selectedGroups.length
+    return selectedGroups[nextIndex]
+  }
+
+  const startQuiz = () => {
+    if (filteredQuestions.length === 0) return
+
+    setQuizStarted(true)
+    setCurrentQuestionIndex(0)
+    setQuizResults([])
+    setPickedStudentIds([])
+    setGroupParticipation({})
+    setGroupScores({})
+    
+    // Set initial group for group mode
+    if (quizMode === "group" && selectedGroups.length > 0) {
+      setCurrentGroup(selectedGroups[0])
+    }
+  }
+
   const getAvailableStudents = () => {
     if (quizMode === "individual") {
       return students.filter(s => !pickedStudentIds.includes(s.id))
     } else {
-      // In group mode, get students from selected group
-      // Sort by participation count to prioritize students who haven't answered yet
+      // If quiz hasn't started yet, show all students from selected groups
+      if (!quizStarted) {
+        return students.filter(s => selectedGroups.includes(s.group || ""))
+      }
+      // During quiz, only show students from current group
       return students
-        .filter(s => s.group === selectedGroup)
+        .filter(s => s.group === currentGroup)
         .sort((a, b) => {
           const aParticipation = groupParticipation[a.group || ""] || 0
           const bParticipation = groupParticipation[b.group || ""] || 0
@@ -180,9 +220,46 @@ export default function QuizPage() {
 
   const handleQuizModeChange = (value: "individual" | "group") => {
     setQuizMode(value)
-    setSelectedGroup(undefined)
+    setSelectedGroups([])
+    setCurrentGroup(null)
     setPickedStudentIds([])
   }
+
+  // Add new component for group selection
+  const GroupSelection = () => (
+    <div className="space-y-4">
+      <Label>Select Groups to Compete</Label>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        {groups.map((group) => (
+          <Badge
+            key={group}
+            variant={selectedGroups.includes(group) ? "default" : "outline"}
+            className="cursor-pointer text-center"
+            onClick={() => {
+              setSelectedGroups(prev =>
+                prev.includes(group)
+                  ? prev.filter(g => g !== group)
+                  : [...prev, group]
+              )
+            }}
+          >
+            Group {group}
+          </Badge>
+        ))}
+      </div>
+      {selectedGroups.length > 0 && (
+        <div className="mt-4">
+          <Alert>
+            <Users className="h-4 w-4" />
+            <AlertTitle>Selected Groups</AlertTitle>
+            <AlertDescription>
+              {selectedGroups.map(g => `Group ${g}`).join(" vs ")}
+            </AlertDescription>
+          </Alert>
+        </div>
+      )}
+    </div>
+  )
 
   if (loading) {
     return (
@@ -363,22 +440,16 @@ export default function QuizPage() {
                     </RadioGroup>
                   </div>
 
-                  {quizMode === "group" && (
-                    <div className="space-y-4">
-                      <Label htmlFor="group">Select Group</Label>
-                      <Select value={selectedGroup} onValueChange={setSelectedGroup}>
-                        <SelectTrigger id="group" className="rounded-xl">
-                          <SelectValue placeholder="Select a group" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {groups.map((g) => (
-                            <SelectItem key={g} value={g}>
-                              Group {g}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                  {quizMode === "group" && <GroupSelection />}
+
+                  {quizMode === "group" && selectedGroups.length < 2 && (
+                    <Alert variant="destructive">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertTitle>Insufficient Groups</AlertTitle>
+                      <AlertDescription>
+                        Please select at least 2 groups for group competition mode.
+                      </AlertDescription>
+                    </Alert>
                   )}
                 </TabsContent>
               </Tabs>
@@ -388,10 +459,10 @@ export default function QuizPage() {
                   <AlertCircle className="h-4 w-4" />
                   <AlertTitle>No students available</AlertTitle>
                   <AlertDescription>
-                    {quizMode === "group" && !selectedGroup
-                      ? "Please select a group to start the quiz."
+                    {quizMode === "group" && !selectedGroups.length
+                      ? "Please select groups to start the quiz."
                       : quizMode === "group"
-                      ? "No students found in the selected group."
+                      ? "No students found in the selected groups."
                       : "Please add students before starting a quiz."}
                   </AlertDescription>
                 </Alert>
@@ -407,7 +478,7 @@ export default function QuizPage() {
                 disabled={
                   filteredQuestions.length === 0 ||
                   getAvailableStudents().length === 0 ||
-                  (quizMode === "group" && selectedGroup === undefined)
+                  (quizMode === "group" && selectedGroups.length < 2)
                 }
                 className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white"
               >
@@ -417,17 +488,47 @@ export default function QuizPage() {
           </Card>
         </motion.div>
       ) : (
-        <QuestionCard
-          question={filteredQuestions[currentQuestionIndex]}
-          students={getAvailableStudents()}
-          pickedStudentIds={pickedStudentIds}
-          onAnswer={handleAnswer}
-          onNext={handleNextQuestion}
-          onEnd={handleEndQuiz}
-          isLast={currentQuestionIndex === filteredQuestions.length - 1}
-          currentQuestionIndex={currentQuestionIndex}
-          totalQuestions={filteredQuestions.length}
-        />
+        <>
+          {quizMode === "group" && (
+            <Card className="mb-4">
+              <CardContent className="p-4">
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-lg font-semibold">Group Scores</h3>
+                    <Badge variant="outline">Current Turn: Group {currentGroup}</Badge>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                    {selectedGroups.map(group => (
+                      <div
+                        key={group}
+                        className={`rounded-lg border p-4 ${
+                          group === currentGroup ? "border-primary bg-primary/5" : ""
+                        }`}
+                      >
+                        <div className="text-sm text-muted-foreground">Group {group}</div>
+                        <div className="text-2xl font-bold">{groupScores[group] || 0}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+          <QuestionCard
+            question={filteredQuestions[currentQuestionIndex]}
+            students={getAvailableStudents()}
+            pickedStudentIds={pickedStudentIds}
+            onAnswer={handleAnswer}
+            onNext={handleNextQuestion}
+            onEnd={handleEndQuiz}
+            isLast={currentQuestionIndex === filteredQuestions.length - 1}
+            currentQuestionIndex={currentQuestionIndex}
+            totalQuestions={filteredQuestions.length}
+            currentGroup={currentGroup}
+            isGroupMode={quizMode === "group"}
+            onPassTurn={handlePassTurn}
+          />
+        </>
       )}
     </div>
   )

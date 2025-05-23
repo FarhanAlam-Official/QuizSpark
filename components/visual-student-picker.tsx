@@ -12,7 +12,7 @@ interface VisualStudentPickerProps {
   students: Student[]
   excludeIds?: number[]
   onStudentPicked: (student: Student) => void
-  onClose?: () => void
+  onClose: () => void
 }
 
 export function VisualStudentPicker({ students, excludeIds = [], onStudentPicked, onClose }: VisualStudentPickerProps) {
@@ -36,8 +36,7 @@ export function VisualStudentPicker({ students, excludeIds = [], onStudentPicked
 
   // Initialize available students
   useEffect(() => {
-    const excludeIdStrings = excludeIds.map(id => id.toString())
-    const filtered = students.filter((student) => !excludeIdStrings.includes(student.id.toString()))
+    const filtered = students.filter((student) => !excludeIds.includes(student.id))
     setAvailableStudents(filtered)
     setDisplayedStudents(getRandomStudents(filtered, 8))
   }, [students, excludeIds, getRandomStudents])
