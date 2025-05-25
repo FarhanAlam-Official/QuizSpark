@@ -94,6 +94,8 @@ pids
 # Database
 *.sqlite
 db.json
+db.json.bak
+db.backup.*.json
 
 # Misc
 *.pem
