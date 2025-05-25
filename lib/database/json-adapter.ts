@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { DatabaseAdapter, Student, Question } from './types';
+import type { DatabaseAdapter, Student, Question, Task } from './types';
 
 const API_BASE_URL = process.env.JSON_SERVER_URL || 'http://localhost:4000';
 
@@ -51,6 +51,27 @@ export const jsonAdapter: DatabaseAdapter = {
     },
     delete: async (id: string) => {
       await api.delete(`/questions/${id}`);
+    },
+  },
+  tasks: {
+    getAll: async () => {
+      const response = await api.get<Task[]>('/tasks');
+      return response.data;
+    },
+    getById: async (id: string) => {
+      const response = await api.get<Task>(`/tasks/${id}`);
+      return response.data;
+    },
+    create: async (data: Omit<Task, 'id'>) => {
+      const response = await api.post<Task>('/tasks', data);
+      return response.data;
+    },
+    update: async (id: string, data: Partial<Task>) => {
+      const response = await api.patch<Task>(`/tasks/${id}`, data);
+      return response.data;
+    },
+    delete: async (id: string) => {
+      await api.delete(`/tasks/${id}`);
     },
   },
 }; 

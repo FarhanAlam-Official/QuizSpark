@@ -6,27 +6,36 @@ import { BarChart3, BookOpen, CheckSquare, Users } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { useApp } from "@/lib/context/AppContext"
 
+interface DashboardStats {
+  students: number;
+  questions: number;
+  completedTasks: number;
+  averageScore: number;
+}
+
 export default function DashboardPage() {
-  const { students, questions, tasks, loading } = useApp()
-  const [stats, setStats] = useState({
+  const { students, questions, loading } = useApp()
+  const [stats, setStats] = useState<DashboardStats>({
     students: 0,
     questions: 0,
-    tasks: 0,
     completedTasks: 0,
+    averageScore: 0,
   })
 
   useEffect(() => {
     if (!loading) {
-      const completedTasks = tasks.filter((task) => task.completed).length
+      // Calculate average score
+      const totalScore = students.reduce((sum, student) => sum + (student.score || 0), 0);
+      const averageScore = students.length > 0 ? Math.round(totalScore / students.length) : 0;
 
       setStats({
         students: students.length,
         questions: questions.length,
-        tasks: tasks.length,
-        completedTasks,
+        completedTasks: 0, // We'll handle tasks in a separate feature
+        averageScore,
       })
     }
-  }, [loading, students, questions, tasks])
+  }, [loading, students, questions])
 
   if (loading) {
     return (
@@ -76,31 +85,21 @@ export default function DashboardPage() {
 
         <Card className="dashboard-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Tasks</CardTitle>
-            <CheckSquare className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Average Score</CardTitle>
+            <BarChart3 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.tasks - stats.completedTasks}</div>
-            <p className="text-xs text-muted-foreground">
-              <Link href="/tasks" className="text-primary hover:underline">
-                Manage tasks
-              </Link>
-            </p>
+            <div className="text-2xl font-bold">{stats.averageScore}</div>
           </CardContent>
         </Card>
 
         <Card className="dashboard-card">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Leaderboard</CardTitle>
-            <BarChart3 className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Completed Tasks</CardTitle>
+            <CheckSquare className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">View</div>
-            <p className="text-xs text-muted-foreground">
-              <Link href="/leaderboard" className="text-primary hover:underline">
-                See student scores
-              </Link>
-            </p>
+            <div className="text-2xl font-bold">{stats.completedTasks}</div>
           </CardContent>
         </Card>
       </div>

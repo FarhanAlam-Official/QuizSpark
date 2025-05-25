@@ -14,6 +14,18 @@ export interface Question {
   difficulty: string;
 }
 
+export interface Task {
+  id: string;
+  title: string;
+  description: string;
+  type: "Verbal" | "Written" | "Numerical";
+  assignedTo: string | null;
+  assignedGroup: string | null;
+  attachmentUrl: string | null;
+  attachmentName: string | null;
+  completed: boolean;
+}
+
 export interface DatabaseAdapter {
   students: {
     getAll: () => Promise<Student[]>;
@@ -27,6 +39,13 @@ export interface DatabaseAdapter {
     getById: (id: string) => Promise<Question | null>;
     create: (data: Omit<Question, 'id'>) => Promise<Question>;
     update: (id: string, data: Partial<Question>) => Promise<Question>;
+    delete: (id: string) => Promise<void>;
+  };
+  tasks: {
+    getAll: () => Promise<Task[]>;
+    getById: (id: string) => Promise<Task | null>;
+    create: (data: Omit<Task, 'id'>) => Promise<Task>;
+    update: (id: string, data: Partial<Task>) => Promise<Task>;
     delete: (id: string) => Promise<void>;
   };
 } 

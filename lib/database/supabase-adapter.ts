@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import type { DatabaseAdapter, Student, Question } from './types';
+import type { DatabaseAdapter, Student, Question, Task } from './types';
 
 if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
   throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL');
@@ -108,6 +108,56 @@ export const supabaseAdapter: DatabaseAdapter = {
     delete: async (id: string) => {
       const { error } = await supabase
         .from('questions')
+        .delete()
+        .eq('id', id);
+      
+      if (error) throw error;
+    },
+  },
+  tasks: {
+    getAll: async () => {
+      const { data, error } = await supabase
+        .from('tasks')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      return data;
+    },
+    getById: async (id: string) => {
+      const { data, error } = await supabase
+        .from('tasks')
+        .select('*')
+        .eq('id', id)
+        .single();
+      
+      if (error) throw error;
+      return data;
+    },
+    create: async (data: Omit<Task, 'id'>) => {
+      const { data: newTask, error } = await supabase
+        .from('tasks')
+        .insert([data])
+        .select()
+        .single();
+      
+      if (error) throw error;
+      return newTask;
+    },
+    update: async (id: string, data: Partial<Task>) => {
+      const { data: updatedTask, error } = await supabase
+        .from('tasks')
+        .update(data)
+        .eq('id', id)
+        .select()
+        .single();
+      
+      if (error) throw error;
+      return updatedTask;
+    },
+    delete: async (id: string) => {
+      const { error } = await supabase
+        .from('tasks')
         .delete()
         .eq('id', id);
       

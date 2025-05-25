@@ -4,7 +4,14 @@ import { supabaseAdapter } from './supabase-adapter';
 
 type DatabaseMode = 'json' | 'supabase';
 
-const getAdapter = (mode: DatabaseMode = 'json'): DatabaseAdapter => {
+const getAdapter = (): DatabaseAdapter => {
+  // Always use Supabase in production
+  if (process.env.NEXT_PUBLIC_VERCEL_ENV === 'production') {
+    return supabaseAdapter;
+  }
+
+  // In development, use the mode from env or default to json
+  const mode = (process.env.DATABASE_MODE || 'json') as DatabaseMode;
   switch (mode) {
     case 'supabase':
       return supabaseAdapter;
@@ -14,11 +21,8 @@ const getAdapter = (mode: DatabaseMode = 'json'): DatabaseAdapter => {
   }
 };
 
-// Get the database mode from environment variables
-const databaseMode = (process.env.DATABASE_MODE || 'json') as DatabaseMode;
-
 // Export the configured database adapter
-export const db = getAdapter(databaseMode);
+export const db = getAdapter();
 
 // Export types
 export type { DatabaseAdapter, Student, Question } from './types'; 
