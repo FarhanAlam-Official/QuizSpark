@@ -3,6 +3,8 @@ export interface Student {
   name: string;
   group: string;
   score: number;
+  user_id: string;
+  created_at?: string;
 }
 
 export interface Question {
@@ -12,6 +14,8 @@ export interface Question {
   correct_option: number;
   topic: string;
   difficulty: string;
+  user_id: string;
+  created_at?: string;
 }
 
 export interface Task {
@@ -24,9 +28,29 @@ export interface Task {
   attachmentUrl: string | null;
   attachmentName: string | null;
   completed: boolean;
+  user_id: string;
+  created_at?: string;
+}
+
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  role: 'admin' | 'teacher' | 'student';
+  created_at: string;
+}
+
+export interface AuthAdapter {
+  createUser: (userData: { email: string; password: string; name: string; role: User['role'] }) => Promise<User>;
+  getUserByEmail: (email: string) => Promise<User | null>;
+  validateUser: (email: string, password: string) => Promise<User | null>;
 }
 
 export interface DatabaseAdapter {
+  // Auth methods
+  auth: AuthAdapter;
+  
+  // Existing methods
   students: {
     getAll: () => Promise<Student[]>;
     getById: (id: string) => Promise<Student | null>;
