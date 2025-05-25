@@ -1,37 +1,18 @@
-'use client';
+"use client";
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import { toast } from 'react-hot-toast';
-import { Student, Question, Task, QuizHistory, studentsApi, questionsApi, tasksApi, quizHistoryApi } from '../api';
+import { createContext, useContext, useEffect, useState } from "react";
+import { db, type Student, type Question } from "@/lib/database";
 
 interface AppContextType {
-  // Data
   students: Student[];
   questions: Question[];
-  tasks: Task[];
-  quizHistory: QuizHistory[];
-  
-  // Loading states
   loading: boolean;
-  
-  // Student operations
-  addStudent: (student: Omit<Student, 'id'>) => Promise<void>;
-  updateStudent: (id: number, data: Partial<Student>) => Promise<void>;
-  deleteStudent: (id: number) => Promise<void>;
-  
-  // Question operations
-  addQuestion: (question: Omit<Question, 'id'>) => Promise<void>;
-  updateQuestion: (id: number, data: Partial<Question>) => Promise<void>;
-  deleteQuestion: (id: number) => Promise<void>;
-  
-  // Task operations
-  addTask: (task: Omit<Task, 'id'>) => Promise<void>;
-  updateTask: (id: number, data: Partial<Task>) => Promise<void>;
-  deleteTask: (id: number) => Promise<void>;
-  
-  // Quiz History operations
-  addQuizHistory: (history: Omit<QuizHistory, 'id'>) => Promise<void>;
-  getStudentHistory: (studentId: number) => Promise<QuizHistory[]>;
+  addStudent: (data: Omit<Student, 'id'>) => Promise<void>;
+  updateStudent: (id: string, updates: Partial<Student>) => Promise<void>;
+  deleteStudent: (id: string) => Promise<void>;
+  addQuestion: (data: Omit<Question, 'id'>) => Promise<void>;
+  updateQuestion: (id: string, updates: Partial<Question>) => Promise<void>;
+  deleteQuestion: (id: string) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -39,180 +20,104 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [students, setStudents] = useState<Student[]>([]);
   const [questions, setQuestions] = useState<Question[]>([]);
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [quizHistory, setQuizHistory] = useState<QuizHistory[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Initial data fetch
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [studentsData, questionsData, tasksData, historyData] = await Promise.all([
-          studentsApi.getAll(),
-          questionsApi.getAll(),
-          tasksApi.getAll(),
-          quizHistoryApi.getAll(),
-        ]);
-
-        setStudents(studentsData);
-        setQuestions(questionsData);
-        setTasks(tasksData);
-        setQuizHistory(historyData);
-      } catch (error) {
-        toast.error('Failed to load data');
-        console.error('Error fetching data:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
+    // Fetch initial data
     fetchData();
   }, []);
 
-  // Student operations
-  const addStudent = async (student: Omit<Student, 'id'>) => {
+  const fetchData = async () => {
     try {
-      const newStudent = await studentsApi.create(student);
+      const [studentsData, questionsData] = await Promise.all([
+        db.students.getAll(),
+        db.questions.getAll()
+      ]);
+      
+      setStudents(studentsData);
+      setQuestions(questionsData);
+      setLoading(false);
+    } catch (error) {
+      console.error('Error fetching data:', error);
+      setLoading(false);
+    }
+  };
+
+  const addStudent = async (data: Omit<Student, 'id'>) => {
+    try {
+      const newStudent = await db.students.create(data);
       setStudents(prev => [...prev, newStudent]);
-      toast.success('Student added successfully');
     } catch (error) {
-      toast.error('Failed to add student');
+      console.error('Error adding student:', error);
       throw error;
     }
   };
 
-  const updateStudent = async (id: number, data: Partial<Student>) => {
+  const updateStudent = async (id: string, updates: Partial<Student>) => {
     try {
-      const updatedStudent = await studentsApi.update(id, data);
+      const updatedStudent = await db.students.update(id, updates);
       setStudents(prev => prev.map(s => s.id === id ? updatedStudent : s));
-      toast.success('Student updated successfully');
     } catch (error) {
-      toast.error('Failed to update student');
+      console.error('Error updating student:', error);
       throw error;
     }
   };
 
-  const deleteStudent = async (id: number) => {
+  const deleteStudent = async (id: string) => {
     try {
-      await studentsApi.delete(id);
+      await db.students.delete(id);
       setStudents(prev => prev.filter(s => s.id !== id));
-      toast.success('Student deleted successfully');
     } catch (error) {
-      toast.error('Failed to delete student');
+      console.error('Error deleting student:', error);
       throw error;
     }
   };
 
-  // Question operations
-  const addQuestion = async (question: Omit<Question, 'id'>) => {
+  const addQuestion = async (data: Omit<Question, 'id'>) => {
     try {
-      const newQuestion = await questionsApi.create(question);
+      const newQuestion = await db.questions.create(data);
       setQuestions(prev => [...prev, newQuestion]);
-      toast.success('Question added successfully');
     } catch (error) {
-      toast.error('Failed to add question');
+      console.error('Error adding question:', error);
       throw error;
     }
   };
 
-  const updateQuestion = async (id: number, data: Partial<Question>) => {
+  const updateQuestion = async (id: string, updates: Partial<Question>) => {
     try {
-      const updatedQuestion = await questionsApi.update(id, data);
+      const updatedQuestion = await db.questions.update(id, updates);
       setQuestions(prev => prev.map(q => q.id === id ? updatedQuestion : q));
-      toast.success('Question updated successfully');
     } catch (error) {
-      toast.error('Failed to update question');
+      console.error('Error updating question:', error);
       throw error;
     }
   };
 
-  const deleteQuestion = async (id: number) => {
+  const deleteQuestion = async (id: string) => {
     try {
-      await questionsApi.delete(id);
+      await db.questions.delete(id);
       setQuestions(prev => prev.filter(q => q.id !== id));
-      toast.success('Question deleted successfully');
     } catch (error) {
-      toast.error('Failed to delete question');
+      console.error('Error deleting question:', error);
       throw error;
     }
   };
 
-  // Task operations
-  const addTask = async (task: Omit<Task, 'id'>) => {
-    try {
-      const newTask = await tasksApi.create(task);
-      setTasks(prev => [...prev, newTask]);
-      toast.success('Task added successfully');
-    } catch (error) {
-      toast.error('Failed to add task');
-      throw error;
-    }
-  };
-
-  const updateTask = async (id: number, data: Partial<Task>) => {
-    try {
-      const updatedTask = await tasksApi.update(id, data);
-      setTasks(prev => prev.map(t => t.id === id ? updatedTask : t));
-      toast.success('Task updated successfully');
-    } catch (error) {
-      toast.error('Failed to update task');
-      throw error;
-    }
-  };
-
-  const deleteTask = async (id: number) => {
-    try {
-      await tasksApi.delete(id);
-      setTasks(prev => prev.filter(t => t.id !== id));
-      toast.success('Task deleted successfully');
-    } catch (error) {
-      toast.error('Failed to delete task');
-      throw error;
-    }
-  };
-
-  // Quiz History operations
-  const addQuizHistory = async (history: Omit<QuizHistory, 'id'>) => {
-    try {
-      const newHistory = await quizHistoryApi.create(history);
-      setQuizHistory(prev => [...prev, newHistory]);
-      toast.success('Quiz history saved successfully');
-    } catch (error) {
-      toast.error('Failed to save quiz history');
-      throw error;
-    }
-  };
-
-  const getStudentHistory = async (studentId: number) => {
-    try {
-      const history = await quizHistoryApi.getByStudent(studentId);
-      return history;
-    } catch (error) {
-      toast.error('Failed to fetch student history');
-      throw error;
-    }
-  };
-
-  const value = {
-    students,
-    questions,
-    tasks,
-    quizHistory,
-    loading,
-    addStudent,
-    updateStudent,
-    deleteStudent,
-    addQuestion,
-    updateQuestion,
-    deleteQuestion,
-    addTask,
-    updateTask,
-    deleteTask,
-    addQuizHistory,
-    getStudentHistory,
-  };
-
-  return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
+  return (
+    <AppContext.Provider value={{
+      students,
+      questions,
+      loading,
+      addStudent,
+      updateStudent,
+      deleteStudent,
+      addQuestion,
+      updateQuestion,
+      deleteQuestion
+    }}>
+      {children}
+    </AppContext.Provider>
+  );
 }
 
 export function useApp() {
