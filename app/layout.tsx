@@ -5,6 +5,7 @@ import { Providers } from "@/components/providers"
 import { Header } from "@/components/header"
 import { Footer } from "@/components/footer"
 import { AuthProvider } from "@/lib/context/AuthContext"
+import { SpeedInsights } from "@vercel/speed-insights/next"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -91,6 +92,7 @@ export default function RootLayout({
             </div>
           </Providers>
         </AuthProvider>
+        <SpeedInsights />
       </body>
     </html>
   )
