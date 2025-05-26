@@ -7,11 +7,11 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { toast } from "sonner";
 import { signInWithLocalDb } from "@/lib/auth/localAuth";
 import { validateEmail } from "@/lib/utils/validation";
 import { Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/lib/context/AuthContext";
+import { authNotifications, formNotifications } from "@/lib/utils/notifications";
 
 export default function LoginForm() {
   const [isLoading, setIsLoading] = useState(false);
@@ -44,10 +44,12 @@ export default function LoginForm() {
       // Validate email
       const emailValidation = validateEmail(email);
       if (!emailValidation.isValid) {
+        formNotifications.invalidEmail();
         throw new Error(emailValidation.error);
       }
 
       if (!password) {
+        formNotifications.requiredField('Password');
         throw new Error("Password is required");
       }
 
@@ -71,6 +73,15 @@ export default function LoginForm() {
 
       if (result.error) {
         console.error('❌ Login error:', result.error);
+        // Handle specific error cases
+        if (result.error.message.includes('Invalid email or password')) {
+          authNotifications.invalidCredentials();
+        } else if (result.error.message.includes('Email not confirmed') || 
+                  result.error.message.includes('verify your email')) {
+          authNotifications.emailNotVerified();
+        } else {
+          authNotifications.loginError(result.error.message);
+        }
         throw new Error(result.error.message);
       }
 
@@ -82,14 +93,13 @@ export default function LoginForm() {
       login(result.data.user);
 
       console.log('✅ Login successful, redirecting...');
-      toast.success("Logged in successfully");
+      authNotifications.loginSuccess();
       
       // Use window.location for a full page reload to trigger middleware
       window.location.href = '/dashboard';
     } catch (error: any) {
       console.error('❌ Form submission error:', error);
       setError(error.message);
-      toast.error(error.message);
     } finally {
       setIsLoading(false);
     }

@@ -1,11 +1,13 @@
 import axios from 'axios';
 import { validateEmail, validatePassword } from '@/lib/utils/validation';
+import { isEmailVerified } from '@/lib/utils/otp';
 
 interface User {
   id: string;
   email: string;
   password: string;
   role: string;
+  emailVerified: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -42,6 +44,12 @@ export async function signInWithLocalDb(email: string, password: string): Promis
     if (!user) {
       console.error('❌ Invalid credentials for:', email);
       throw new Error('Invalid email or password');
+    }
+
+    // Check if email is verified
+    if (!user.emailVerified) {
+      console.error('❌ Email not verified:', email);
+      throw new Error('Please verify your email before logging in');
     }
     
     console.log('✅ User authenticated successfully:', { email: user.email, role: user.role });
@@ -105,13 +113,14 @@ export async function registerWithLocalDb(
       throw new Error('An account with this email already exists');
     }
 
-    // Create new user
+    // Create new user with verified email (since we've verified via OTP)
     console.log('👤 Creating new user...');
     const newUser: User = {
       id: crypto.randomUUID(),
       email,
       password,
       role,
+      emailVerified: true, // Set to true since we've verified via OTP
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };

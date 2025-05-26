@@ -7,7 +7,6 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { toast } from "sonner";
 import { registerWithLocalDb } from "@/lib/auth/localAuth";
 import { validateEmail, validatePassword } from "@/lib/utils/validation";
 import { PasswordStrengthIndicator } from "./PasswordStrengthIndicator";
@@ -15,6 +14,7 @@ import { OTPVerification } from "./OTPVerification";
 import { Eye, EyeOff } from "lucide-react";
 import { generateOTP, storeOTP, verifyOTP } from "@/lib/utils/otp";
 import { sendOTPEmail } from "@/lib/email/brevoService";
+import { authNotifications, formNotifications } from "@/lib/utils/notifications";
 
 export default function RegisterForm() {
   const [isLoading, setIsLoading] = useState(false);
@@ -54,6 +54,76 @@ export default function RegisterForm() {
     }
   };
 
+  const handleVerificationComplete = async (otpInput: string) => {
+    const { email, password } = formData;
+    
+    try {
+      // Verify OTP
+      const otpVerification = verifyOTP(email, otpInput);
+      if (!otpVerification.isValid) {
+        authNotifications.emailVerificationError(otpVerification.error || 'Invalid verification code');
+        throw new Error(otpVerification.error);
+      }
+
+      // Register user in local DB
+      const result = await registerWithLocalDb(email, password);
+      if (result.error) {
+        // Handle specific error cases
+        if (result.error.message.includes('already exists')) {
+          authNotifications.emailAlreadyExists();
+        } else {
+          authNotifications.registrationError(result.error.message);
+        }
+        throw new Error(result.error.message);
+      }
+
+      authNotifications.registrationSuccess();
+      router.push("/auth/login");
+    } catch (error: any) {
+      console.error('Registration error:', error);
+    }
+  };
+
+  const handleSupabaseSignUp = async (email: string, password: string) => {
+    // Get the current URL
+    const baseUrl = window.location.origin;
+    const redirectUrl = `${baseUrl}/auth/callback?next=/dashboard`;
+
+    const result = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        emailRedirectTo: redirectUrl,
+        data: {
+          registered_at: new Date().toISOString(),
+        }
+      },
+    });
+
+    if (result.error) {
+      // Enhanced error handling
+      switch (true) {
+        case result.error.message.includes('already registered'):
+          authNotifications.emailAlreadyExists();
+          throw new Error('This email is already registered');
+        case result.error.message.includes('rate limit'):
+          authNotifications.tooManyRequests();
+          throw new Error('Too many attempts. Please try again later');
+        case result.error.message.includes('invalid email'):
+          authNotifications.invalidEmailFormat();
+          throw new Error('Invalid email format');
+        case result.error.message.includes('weak password'):
+          formNotifications.invalidPassword(['Password is too weak']);
+          throw new Error('Password is too weak');
+        default:
+          authNotifications.registrationError(result.error.message);
+          throw new Error(result.error.message);
+      }
+    }
+
+    return result;
+  };
+
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsLoading(true);
@@ -65,66 +135,43 @@ export default function RegisterForm() {
       // Validate email
       const emailValidation = validateEmail(email);
       if (!emailValidation.isValid) {
+        formNotifications.invalidEmail();
         throw new Error(emailValidation.error);
       }
 
       // Validate password
       const passwordValidation = validatePassword(password);
       if (!passwordValidation.isValid) {
+        formNotifications.invalidPassword(passwordValidation.errors);
         throw new Error(passwordValidation.errors.join(". "));
       }
 
       // Check password confirmation
       if (password !== confirmPassword) {
+        formNotifications.passwordMismatch();
         throw new Error("Passwords do not match");
       }
 
       if (process.env.NODE_ENV === 'development') {
-        // In development, send OTP first
+        // Development: Use custom OTP system
         await sendVerificationEmail(email);
         setShowOTPVerification(true);
+        authNotifications.emailVerificationSent();
       } else {
-        // In production, use Supabase's built-in email verification
-        const result = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            emailRedirectTo: `${window.location.origin}/auth/callback`,
-          },
-        });
-
-        if (result.error) {
-          throw new Error(result.error.message);
-        }
-
-        toast.success("Please check your email to confirm your account");
+        // Production: Use Supabase with enhanced handling
+        const result = await handleSupabaseSignUp(email, password);
+        
+        // If successful, show verification page
+        authNotifications.emailVerificationSent();
+        router.push("/auth/verify-email?email=" + encodeURIComponent(email));
       }
     } catch (error: any) {
       setError(error.message);
-      toast.error(error.message);
+      console.error('Registration error:', error);
     } finally {
       setIsLoading(false);
     }
   }
-
-  const handleVerificationComplete = async (otpInput: string) => {
-    const { email, password } = formData;
-    
-    // Verify OTP
-    const otpVerification = verifyOTP(email, otpInput);
-    if (!otpVerification.isValid) {
-      throw new Error(otpVerification.error);
-    }
-
-    // Register user in local DB
-    const result = await registerWithLocalDb(email, password);
-    if (result.error) {
-      throw new Error(result.error.message);
-    }
-
-    toast.success("Account created successfully");
-    router.push("/auth/login");
-  };
 
   if (showOTPVerification) {
     return (

@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { toast } from 'sonner';
+import { otpNotifications } from '@/lib/utils/notifications';
 
 interface OTPVerificationProps {
   email: string;
@@ -65,9 +65,9 @@ export function OTPVerification({
       setIsLoading(true);
       await onResendOTP();
       setResendTimer(60);
-      toast.success('New verification code sent');
+      otpNotifications.sendSuccess();
     } catch (error: any) {
-      toast.error(error.message);
+      otpNotifications.sendError();
     } finally {
       setIsLoading(false);
     }
@@ -76,16 +76,24 @@ export function OTPVerification({
   const handleVerify = async () => {
     const otpString = otp.join('');
     if (otpString.length !== 6) {
-      toast.error('Please enter all digits');
+      otpNotifications.incompleteOTP();
       return;
     }
 
     setIsLoading(true);
     try {
       await onVerificationComplete(otpString);
-      toast.success('Email verified successfully');
     } catch (error: any) {
-      toast.error(error.message);
+      // Handle specific OTP error cases
+      if (error.message.includes('expired')) {
+        otpNotifications.expiredOTP();
+      } else if (error.message.includes('Invalid OTP')) {
+        otpNotifications.invalidOTP();
+      } else if (error.message.includes('already exists')) {
+        otpNotifications.emailAlreadyExists();
+      } else {
+        otpNotifications.verificationFailed(error.message);
+      }
     } finally {
       setIsLoading(false);
     }
