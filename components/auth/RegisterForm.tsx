@@ -39,7 +39,7 @@ export default function RegisterForm() {
 
   const handleSupabaseSignUp = async (email: string, password: string, username: string) => {
     const baseUrl = window.location.origin;
-    const redirectUrl = `${baseUrl}/auth/callback?type=signup&next=/dashboard`;
+    const redirectUrl = `${baseUrl}/auth/callback?type=signup`;
 
     const result = await supabase.auth.signUp({
       email,

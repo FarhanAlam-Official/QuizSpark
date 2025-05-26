@@ -9,7 +9,6 @@ export async function GET(request: NextRequest) {
   try {
     const requestUrl = new URL(request.url);
     const code = requestUrl.searchParams.get('code');
-    const next = requestUrl.searchParams.get('next') || '/dashboard';
     const type = requestUrl.searchParams.get('type');
 
     // If there's no code, this isn't a valid auth callback
@@ -49,7 +48,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(
         new URL('/auth/reset-password', request.url)
       );
-    } else if (type === 'signup' || !type) {
+    } else if (type === 'signup') {
       // Email verification flow
       if (user.email_confirmed_at) {
         // Email is verified, redirect to success page
@@ -62,15 +61,9 @@ export async function GET(request: NextRequest) {
           new URL('/auth/verification-error', request.url)
         );
       }
-    } else if (type === 'invite') {
-      // Handle organization invites if you have them
-      return NextResponse.redirect(new URL(next, request.url));
-    } else if (type === 'magiclink') {
-      // Handle magic link signin
-      return NextResponse.redirect(new URL(next, request.url));
     }
 
-    // Default fallback
+    // Default fallback for unknown types
     return NextResponse.redirect(
       new URL('/auth/verification-error', request.url)
     );
