@@ -82,4 +82,25 @@ export function getPasswordStrength(password: string): {
   }
 
   return strength;
+}
+
+export function validateUsername(username: string): { isValid: boolean; error?: string } {
+  if (!username) {
+    return { isValid: false, error: "Username is required" };
+  }
+
+  if (username.length < 3) {
+    return { isValid: false, error: "Username must be at least 3 characters long" };
+  }
+
+  if (username.length > 20) {
+    return { isValid: false, error: "Username must be less than 20 characters long" };
+  }
+
+  // Only allow letters, numbers, and underscores
+  if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+    return { isValid: false, error: "Username can only contain letters, numbers, and underscores" };
+  }
+
+  return { isValid: true };
 } 

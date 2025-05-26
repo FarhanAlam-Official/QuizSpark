@@ -100,12 +100,27 @@ export const authNotifications = {
 
 // Form specific notifications
 export const formNotifications = {
-  invalidEmail: () => showError('Please enter a valid email address'),
-  invalidPassword: (errors: string[]) => showError(errors.join('. ')),
-  passwordMismatch: () => showError('Passwords do not match'),
-  requiredField: (fieldName: string) => showError(`${fieldName} is required`),
-  submitError: (error: string) => showError(`Form submission failed: ${error}`),
-  submitSuccess: (message: string) => showSuccess(message),
+  invalidEmail: () => {
+    toast.error("Please enter a valid email address");
+  },
+  invalidPassword: (errors: string[]) => {
+    toast.error(errors.join(". "));
+  },
+  invalidUsername: (error: string) => {
+    toast.error(error);
+  },
+  passwordMismatch: () => {
+    toast.error("Passwords do not match");
+  },
+  requiredField: (fieldName: string) => {
+    toast.error(`${fieldName} is required`);
+  },
+  submitError: (error: string) => {
+    toast.error(error);
+  },
+  submitSuccess: (message: string) => {
+    toast.success(message);
+  },
 };
 
 // OTP specific notifications

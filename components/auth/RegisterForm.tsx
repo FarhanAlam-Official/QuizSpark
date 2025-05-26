@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { registerWithLocalDb } from "@/lib/auth/localAuth";
-import { validateEmail, validatePassword } from "@/lib/utils/validation";
+import { validateEmail, validatePassword, validateUsername } from "@/lib/utils/validation";
 import { PasswordStrengthIndicator } from "./PasswordStrengthIndicator";
 import { OTPVerification } from "./OTPVerification";
 import { Eye, EyeOff } from "lucide-react";
@@ -21,6 +21,7 @@ export default function RegisterForm() {
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
+    username: "",
     email: "",
     password: "",
     confirmPassword: "",
@@ -36,56 +37,7 @@ export default function RegisterForm() {
     setError(null);
   };
 
-  const sendVerificationEmail = async (email: string) => {
-    const otp = generateOTP();
-    storeOTP(email, otp);
-    
-    const response = await fetch('/api/auth/send-otp', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ email, otp }),
-    });
-
-    const result = await response.json();
-    if (!result.success) {
-      throw new Error(result.error || 'Failed to send verification email');
-    }
-  };
-
-  const handleVerificationComplete = async (otpInput: string) => {
-    const { email, password } = formData;
-    
-    try {
-      // Verify OTP
-      const otpVerification = verifyOTP(email, otpInput);
-      if (!otpVerification.isValid) {
-        authNotifications.emailVerificationError(otpVerification.error || 'Invalid verification code');
-        throw new Error(otpVerification.error);
-      }
-
-      // Register user in local DB
-      const result = await registerWithLocalDb(email, password);
-      if (result.error) {
-        // Handle specific error cases
-        if (result.error.message.includes('already exists')) {
-          authNotifications.emailAlreadyExists();
-        } else {
-          authNotifications.registrationError(result.error.message);
-        }
-        throw new Error(result.error.message);
-      }
-
-      authNotifications.registrationSuccess();
-      router.push("/auth/login");
-    } catch (error: any) {
-      console.error('Registration error:', error);
-    }
-  };
-
-  const handleSupabaseSignUp = async (email: string, password: string) => {
-    // Get the current URL
+  const handleSupabaseSignUp = async (email: string, password: string, username: string) => {
     const baseUrl = window.location.origin;
     const redirectUrl = `${baseUrl}/auth/callback?next=/dashboard`;
 
@@ -95,13 +47,13 @@ export default function RegisterForm() {
       options: {
         emailRedirectTo: redirectUrl,
         data: {
+          username,
           registered_at: new Date().toISOString(),
         }
       },
     });
 
     if (result.error) {
-      // Enhanced error handling
       switch (true) {
         case result.error.message.includes('already registered'):
           authNotifications.emailAlreadyExists();
@@ -130,7 +82,14 @@ export default function RegisterForm() {
     setError(null);
 
     try {
-      const { email, password, confirmPassword } = formData;
+      const { email, password, confirmPassword, username } = formData;
+
+      // Validate username
+      const usernameValidation = validateUsername(username);
+      if (!usernameValidation.isValid) {
+        formNotifications.invalidUsername(usernameValidation.error);
+        throw new Error(usernameValidation.error);
+      }
 
       // Validate email
       const emailValidation = validateEmail(email);
@@ -152,35 +111,18 @@ export default function RegisterForm() {
         throw new Error("Passwords do not match");
       }
 
-      if (process.env.NODE_ENV === 'development') {
-        // Development: Use custom OTP system
-        await sendVerificationEmail(email);
-        setShowOTPVerification(true);
-        authNotifications.emailVerificationSent();
-      } else {
-        // Production: Use Supabase with enhanced handling
-        const result = await handleSupabaseSignUp(email, password);
-        
-        // If successful, show verification page
-        authNotifications.emailVerificationSent();
-        router.push("/auth/verify-email?email=" + encodeURIComponent(email));
-      }
+      // Production: Use Supabase with enhanced handling
+      const result = await handleSupabaseSignUp(email, password, username);
+      
+      // If successful, show verification page
+      authNotifications.emailVerificationSent();
+      router.push("/auth/verify-email?email=" + encodeURIComponent(email));
     } catch (error: any) {
       setError(error.message);
       console.error('Registration error:', error);
     } finally {
       setIsLoading(false);
     }
-  }
-
-  if (showOTPVerification) {
-    return (
-      <OTPVerification
-        email={formData.email}
-        onVerificationComplete={handleVerificationComplete}
-        onResendOTP={() => sendVerificationEmail(formData.email)}
-      />
-    );
   }
 
   return (
@@ -191,6 +133,19 @@ export default function RegisterForm() {
         </div>
       )}
       <div className="space-y-2">
+        <Label htmlFor="username">Username</Label>
+        <Input
+          id="username"
+          name="username"
+          type="text"
+          value={formData.username}
+          onChange={handleInputChange}
+          placeholder="Choose a username"
+          disabled={isLoading}
+          required
+        />
+      </div>
+      <div className="space-y-2">
         <Label htmlFor="email">Email</Label>
         <Input
           id="email"
@@ -198,11 +153,9 @@ export default function RegisterForm() {
           type="email"
           value={formData.email}
           onChange={handleInputChange}
-          placeholder="name@example.com"
-          required
+          placeholder="Enter your email"
           disabled={isLoading}
-          autoComplete="email"
-          className="w-full"
+          required
         />
       </div>
       <div className="space-y-2">
@@ -214,17 +167,20 @@ export default function RegisterForm() {
             type={showPassword ? "text" : "password"}
             value={formData.password}
             onChange={handleInputChange}
-            required
+            placeholder="Create a password"
             disabled={isLoading}
-            autoComplete="new-password"
-            className="w-full pr-10"
+            required
           />
           <button
             type="button"
             onClick={() => setShowPassword(!showPassword)}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+            className="absolute right-3 top-1/2 -translate-y-1/2"
           >
-            {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+            {showPassword ? (
+              <EyeOff className="h-4 w-4 text-gray-500" />
+            ) : (
+              <Eye className="h-4 w-4 text-gray-500" />
+            )}
           </button>
         </div>
         <PasswordStrengthIndicator password={formData.password} />
@@ -238,21 +194,24 @@ export default function RegisterForm() {
             type={showPassword ? "text" : "password"}
             value={formData.confirmPassword}
             onChange={handleInputChange}
-            required
+            placeholder="Confirm your password"
             disabled={isLoading}
-            autoComplete="new-password"
-            className="w-full pr-10"
+            required
           />
         </div>
       </div>
       <Button className="w-full" type="submit" disabled={isLoading}>
         {isLoading ? "Creating account..." : "Create account"}
       </Button>
-      <div className="text-center text-sm">
-        <Link href="/auth/login" className="text-primary hover:underline">
-          Already have an account? Sign in
+      <p className="text-center text-sm text-muted-foreground">
+        Already have an account?{" "}
+        <Link
+          href="/auth/login"
+          className="text-primary hover:underline"
+        >
+          Sign in
         </Link>
-      </div>
+      </p>
     </form>
   );
 } 
