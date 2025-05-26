@@ -87,8 +87,8 @@ export default function RegisterForm() {
       // Validate username
       const usernameValidation = validateUsername(username);
       if (!usernameValidation.isValid) {
-        formNotifications.invalidUsername(usernameValidation.error);
-        throw new Error(usernameValidation.error);
+        formNotifications.invalidUsername(usernameValidation.error || 'Invalid username');
+        throw new Error(usernameValidation.error || 'Invalid username');
       }
 
       // Validate email
