@@ -8,6 +8,14 @@ import { Mail, RefreshCw } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { authNotifications } from "@/lib/utils/notifications";
 
+// Get the site URL, fallback to window.location.origin for client-side
+const getSiteUrl = () => {
+  if (typeof window !== 'undefined') {
+    return window.location.origin;
+  }
+  return process.env.NEXT_PUBLIC_SITE_URL || '';
+};
+
 function VerifyEmailContent() {
   const searchParams = useSearchParams();
   const email = searchParams.get("email");
@@ -23,7 +31,7 @@ function VerifyEmailContent() {
         type: 'signup',
         email,
         options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback?next=/dashboard`,
+          emailRedirectTo: `${getSiteUrl()}/auth/callback?next=/dashboard`,
         },
       });
 
