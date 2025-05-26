@@ -68,6 +68,9 @@ export default function LoginForm() {
         result = await supabase.auth.signInWithPassword({
           email,
           password,
+          options: {
+            redirectTo: `${window.location.origin}/auth/callback?type=magiclink&next=/dashboard`
+          }
         });
       }
 

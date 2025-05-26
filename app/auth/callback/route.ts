@@ -10,6 +10,7 @@ export async function GET(request: NextRequest) {
     const requestUrl = new URL(request.url);
     const code = requestUrl.searchParams.get('code');
     const next = requestUrl.searchParams.get('next') || '/dashboard';
+    const type = requestUrl.searchParams.get('type');
 
     // If there's no code, this isn't a valid auth callback
     if (!code) {
@@ -42,15 +43,34 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Check if email is confirmed
-    if (user.email_confirmed_at) {
-      // Email is verified, redirect to success page
-      const successUrl = new URL('/auth/verification-success', request.url);
-      return NextResponse.redirect(successUrl);
+    // Handle different authentication scenarios
+    if (type === 'recovery') {
+      // Password reset flow
+      return NextResponse.redirect(
+        new URL('/auth/reset-password', request.url)
+      );
+    } else if (type === 'signup' || !type) {
+      // Email verification flow
+      if (user.email_confirmed_at) {
+        // Email is verified, redirect to success page
+        return NextResponse.redirect(
+          new URL('/auth/verification-success', request.url)
+        );
+      } else {
+        // Email not confirmed
+        return NextResponse.redirect(
+          new URL('/auth/verification-error', request.url)
+        );
+      }
+    } else if (type === 'invite') {
+      // Handle organization invites if you have them
+      return NextResponse.redirect(new URL(next, request.url));
+    } else if (type === 'magiclink') {
+      // Handle magic link signin
+      return NextResponse.redirect(new URL(next, request.url));
     }
 
-    // If we get here, something unexpected happened
-    console.error('Email not confirmed after verification');
+    // Default fallback
     return NextResponse.redirect(
       new URL('/auth/verification-error', request.url)
     );

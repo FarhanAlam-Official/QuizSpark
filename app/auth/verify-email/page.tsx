@@ -31,7 +31,7 @@ function VerifyEmailContent() {
         type: 'signup',
         email,
         options: {
-          emailRedirectTo: `${getSiteUrl()}/auth/callback?next=/dashboard`,
+          emailRedirectTo: `${getSiteUrl()}/auth/callback?type=signup&next=/dashboard`,
         },
       });
 

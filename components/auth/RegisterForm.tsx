@@ -39,7 +39,7 @@ export default function RegisterForm() {
 
   const handleSupabaseSignUp = async (email: string, password: string, username: string) => {
     const baseUrl = window.location.origin;
-    const redirectUrl = `${baseUrl}/auth/callback?next=/dashboard`;
+    const redirectUrl = `${baseUrl}/auth/callback?type=signup&next=/dashboard`;
 
     const result = await supabase.auth.signUp({
       email,
@@ -116,7 +116,7 @@ export default function RegisterForm() {
       
       // If successful, show verification page
       authNotifications.emailVerificationSent();
-      router.push("/auth/verify-email?email=" + encodeURIComponent(email));
+      router.push(`/auth/check-email?email=${encodeURIComponent(email)}&type=signup`);
     } catch (error: any) {
       setError(error.message);
       console.error('Registration error:', error);
