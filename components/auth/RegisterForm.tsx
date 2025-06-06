@@ -49,8 +49,7 @@ export default function RegisterForm() {
         emailRedirectTo: redirectUrl,
         data: {
           name: username,
-          role: 'user',
-          registered_at: new Date().toISOString(),
+          role: 'user'
         }
       },
     });

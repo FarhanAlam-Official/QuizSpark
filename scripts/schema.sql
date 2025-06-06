@@ -133,107 +133,51 @@ ALTER TABLE questions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE quiz_attempts ENABLE ROW LEVEL SECURITY;
 
--- Create policies for users table
+-- Create RLS policies for users table
+ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+
+-- Policy to allow users to view their own profile
 CREATE POLICY "Users can view their own profile"
-ON users FOR SELECT
-TO authenticated
+ON public.users FOR SELECT
 USING (auth.uid() = id);
 
+-- Policy to allow users to update their own profile
 CREATE POLICY "Users can update their own profile"
-ON users FOR UPDATE
-TO authenticated
+ON public.users FOR UPDATE
 USING (auth.uid() = id);
 
-CREATE POLICY "Allow trigger function to insert new users"
-ON users FOR INSERT
-TO authenticated
-WITH CHECK (true);
+-- Policy to allow new user registration
+CREATE POLICY "Allow new user registration"
+ON public.users FOR INSERT
+WITH CHECK (auth.uid() = id OR auth.role() = 'service_role');
 
--- Create policies for user_sessions table
-CREATE POLICY "Users can view their own sessions"
-ON user_sessions FOR SELECT
-TO authenticated
-USING (auth.uid() = user_id);
+-- Grant necessary permissions
+GRANT USAGE ON SCHEMA public TO anon, authenticated;
+GRANT ALL ON public.users TO anon, authenticated;
 
--- Create policies for audit_logs table
-CREATE POLICY "Users can view their own audit logs"
-ON audit_logs FOR SELECT
-TO authenticated
-USING (auth.uid() = user_id);
+-- Create function to handle new user registration
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public.users (id, email, name, role, is_email_verified, created_at, updated_at)
+  VALUES (
+    NEW.id,
+    NEW.email,
+    COALESCE(NEW.raw_user_meta_data->>'name', NEW.email),
+    COALESCE((NEW.raw_user_meta_data->>'role')::user_role, 'user'::user_role),
+    NEW.email_confirmed_at IS NOT NULL,
+    NOW(),
+    NOW()
+  );
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Create policies for students table
-CREATE POLICY "Users can view their own students"
-ON students FOR SELECT
-TO authenticated
-USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can insert their own students"
-ON students FOR INSERT
-TO authenticated
-WITH CHECK (auth.uid() = user_id);
-
-CREATE POLICY "Users can update their own students"
-ON students FOR UPDATE
-TO authenticated
-USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can delete their own students"
-ON students FOR DELETE
-TO authenticated
-USING (auth.uid() = user_id);
-
--- Create policies for questions table
-CREATE POLICY "Users can view their own questions"
-ON questions FOR SELECT
-TO authenticated
-USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can insert their own questions"
-ON questions FOR INSERT
-TO authenticated
-WITH CHECK (auth.uid() = user_id);
-
-CREATE POLICY "Users can update their own questions"
-ON questions FOR UPDATE
-TO authenticated
-USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can delete their own questions"
-ON questions FOR DELETE
-TO authenticated
-USING (auth.uid() = user_id);
-
--- Create policies for tasks table
-CREATE POLICY "Users can view assigned or created tasks"
-ON tasks FOR SELECT
-TO authenticated
-USING (auth.uid() = user_id OR auth.uid() = assigned_to);
-
-CREATE POLICY "Users can insert tasks"
-ON tasks FOR INSERT
-TO authenticated
-WITH CHECK (auth.uid() = user_id);
-
-CREATE POLICY "Users can update their own or assigned tasks"
-ON tasks FOR UPDATE
-TO authenticated
-USING (auth.uid() = user_id OR auth.uid() = assigned_to);
-
-CREATE POLICY "Users can delete their own tasks"
-ON tasks FOR DELETE
-TO authenticated
-USING (auth.uid() = user_id);
-
--- Create policies for quiz_attempts table
-CREATE POLICY "Users can view their own attempts"
-ON quiz_attempts FOR SELECT
-TO authenticated
-USING (auth.uid() = user_id);
-
-CREATE POLICY "Users can insert their own attempts"
-ON quiz_attempts FOR INSERT36
-TO authenticated
-WITH CHECK (auth.uid() = user_id);
+-- Create trigger for new user registration
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
 -- Create function to update updated_at column
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -284,45 +228,6 @@ BEGIN
     RETURN NULL;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Create function to handle new user registration
-CREATE OR REPLACE FUNCTION handle_new_user()
-RETURNS TRIGGER AS $$
-BEGIN
-    -- Ensure role is lowercase before casting
-    INSERT INTO public.users (
-        id,
-        email,
-        name,
-        role,
-        is_email_verified,
-        created_at,
-        updated_at
-    ) VALUES (
-        new.id,
-        new.email,
-        COALESCE(new.raw_user_meta_data->>'name', new.email),
-        (COALESCE(LOWER(new.raw_user_meta_data->>'role'), 'user'))::user_role,
-        new.email_confirmed_at IS NOT NULL,
-        TIMEZONE('utc', NOW()),
-        TIMEZONE('utc', NOW())
-    );
-    RETURN new;
-EXCEPTION
-    WHEN others THEN
-        -- Log the error details
-        RAISE NOTICE 'Error in handle_new_user: %', SQLERRM;
-        RAISE NOTICE 'Error detail: %', SQLSTATE;
-        -- Re-raise the error
-        RAISE;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Ensure the function has proper permissions
-GRANT USAGE ON SCHEMA public TO authenticated;
-GRANT USAGE ON SCHEMA public TO service_role;
-GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated;
-GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
 
 -- Create function to handle user session management
 CREATE OR REPLACE FUNCTION handle_user_session()
@@ -427,12 +332,6 @@ CREATE TRIGGER audit_quiz_attempts_changes
     AFTER INSERT OR UPDATE OR DELETE ON quiz_attempts
     FOR EACH ROW
     EXECUTE FUNCTION log_audit_event();
-
--- Create trigger for new user registration
-CREATE OR REPLACE TRIGGER on_auth_user_created
-    AFTER INSERT ON auth.users
-    FOR EACH ROW
-    EXECUTE FUNCTION handle_new_user();
 
 -- Create trigger for user session management
 CREATE OR REPLACE TRIGGER on_auth_user_login

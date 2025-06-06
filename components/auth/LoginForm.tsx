@@ -47,41 +47,63 @@ export default function LoginForm() {
         throw new Error(emailValidation.error);
       }
 
+      console.log('Attempting to sign in...');
+      
       // Sign in with Supabase
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email: formData.email,
         password: formData.password,
       });
 
-      if (error) throw error;
-      if (!data.user) throw new Error('No user data returned');
+      if (authError) {
+        console.error('Auth error:', authError);
+        throw authError;
+      }
+
+      if (!authData.user) {
+        console.error('No user data returned from auth');
+        throw new Error('No user data returned');
+      }
+
+      console.log('Successfully authenticated, fetching user profile...');
 
       // Get user metadata
       const { data: userData, error: userError } = await supabase
         .from('users')
         .select('*')
-        .eq('id', data.user.id)
+        .eq('id', authData.user.id)
         .single();
 
-      if (userError) throw userError;
+      if (userError) {
+        console.error('Error fetching user profile:', userError);
+        throw new Error('Failed to get user profile');
+      }
+
+      if (!userData) {
+        console.error('No user profile found');
+        throw new Error('User profile not found');
+      }
+
+      console.log('Successfully fetched user profile, logging in...');
 
       // Login successful
       login({
-        id: data.user.id,
-        email: data.user.email!,
-        role: userData.role || 'user',
+        id: authData.user.id,
+        email: authData.user.email!,
+        role: userData.role,
         name: userData.name || '',
         avatar_url: userData.avatar_url || null,
         bio: userData.bio || null,
         preferences: userData.preferences || {},
-        created_at: userData.created_at || new Date().toISOString(),
-        updated_at: userData.updated_at || new Date().toISOString(),
-        last_login_at: userData.last_sign_in_at || new Date().toISOString(),
+        created_at: userData.created_at,
+        updated_at: userData.updated_at,
+        last_login_at: userData.last_login_at || new Date().toISOString(),
         login_count: userData.login_count || 0,
-        is_email_verified: data.user.email_confirmed_at !== null,
+        is_email_verified: authData.user.email_confirmed_at !== null,
         is_active: userData.is_active !== false
       });
 
+      console.log('Login successful, redirecting...');
       authNotifications.loginSuccess();
       router.push('/dashboard');
     } catch (error: any) {
