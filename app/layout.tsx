@@ -6,6 +6,8 @@ import { Header } from "@/components/header"
 import { Footer } from "@/components/footer"
 import { AuthProvider } from "@/lib/context/AuthContext"
 import { SpeedInsights } from "@vercel/speed-insights/next"
+import { createClient } from "@/lib/supabase/server"
+import { Toaster } from "react-hot-toast"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -58,7 +60,11 @@ export const metadata: Metadata = {
   appleWebApp: {
     title: "QuizSpark",
     statusBarStyle: "default",
+    capable: true,
   },
+  other: {
+    "mobile-web-app-capable": "yes"
+  }
 }
 
 export const viewport: Viewport = {
@@ -68,11 +74,14 @@ export const viewport: Viewport = {
   maximumScale: 1,
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
+  const supabase = createClient();
+  const { data: { session } } = await supabase.auth.getSession();
+
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -81,7 +90,7 @@ export default function RootLayout({
         <link rel="manifest" href="/site.webmanifest" />
       </head>
       <body className={inter.className}>
-        <AuthProvider>
+        <AuthProvider initialSession={session}>
           <Providers>
             <div className="relative min-h-screen flex flex-col">
               <Header />
@@ -90,6 +99,7 @@ export default function RootLayout({
               </main>
               <Footer />
             </div>
+            <Toaster position="top-center" />
           </Providers>
         </AuthProvider>
         <SpeedInsights />
