@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { validateEmail, validatePassword, validateUsername } from "@/lib/utils/validation";
 import { PasswordStrengthIndicator } from "./PasswordStrengthIndicator";
 import { OTPVerification } from "./OTPVerification";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, Wand2 } from "lucide-react";
 import { generateOTP, storeOTP, verifyOTP } from "@/lib/utils/otp";
 import { sendOTPEmail } from "@/lib/email/brevoService";
 import { authNotifications, formNotifications } from "@/lib/utils/notifications";
@@ -78,6 +78,33 @@ export default function RegisterForm() {
     return result;
   };
 
+  const generateStrongPassword = () => {
+    const length = 16;
+    const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()_+-=[]{}|;:,.<>?";
+    let password = "";
+    
+    // Ensure at least one of each required character type
+    password += "ABCDEFGHIJKLMNOPQRSTUVWXYZ"[Math.floor(Math.random() * 26)]; // Uppercase
+    password += "abcdefghijklmnopqrstuvwxyz"[Math.floor(Math.random() * 26)]; // Lowercase
+    password += "0123456789"[Math.floor(Math.random() * 10)]; // Number
+    password += "!@#$%^&*()_+-=[]{}|;:,.<>?"[Math.floor(Math.random() * 23)]; // Special char
+    
+    // Fill the rest randomly
+    for (let i = password.length; i < length; i++) {
+      password += charset[Math.floor(Math.random() * charset.length)];
+    }
+    
+    // Shuffle the password
+    password = password.split('').sort(() => Math.random() - 0.5).join('');
+    
+    setFormData(prev => ({
+      ...prev,
+      password,
+      confirmPassword: password
+    }));
+    formNotifications.submitSuccess("Strong password generated!");
+  };
+
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsLoading(true);
@@ -136,38 +163,43 @@ export default function RegisterForm() {
   return (
     <form onSubmit={onSubmit} className="space-y-4">
       {error && (
-        <div className="p-3 text-sm text-red-500 bg-red-50 rounded-md">
+        <div className="p-3 text-sm text-destructive bg-destructive/10 rounded-md">
           {error}
         </div>
       )}
+      
       <div className="space-y-2">
-        <Label htmlFor="username">Username</Label>
+        <Label htmlFor="username" className="text-sm font-medium">Username</Label>
         <Input
           id="username"
           name="username"
           type="text"
           value={formData.username}
           onChange={handleInputChange}
-          placeholder="Choose a username"
+          placeholder="johndoe"
           disabled={isLoading}
           required
+          className="w-full"
         />
       </div>
+
       <div className="space-y-2">
-        <Label htmlFor="email">Email</Label>
+        <Label htmlFor="email" className="text-sm font-medium">Email</Label>
         <Input
           id="email"
           name="email"
           type="email"
           value={formData.email}
           onChange={handleInputChange}
-          placeholder="Enter your email"
+          placeholder="name@example.com"
           disabled={isLoading}
           required
+          className="w-full"
         />
       </div>
+
       <div className="space-y-2">
-        <Label htmlFor="password">Password</Label>
+        <Label htmlFor="password" className="text-sm font-medium">Password</Label>
         <div className="relative">
           <Input
             id="password"
@@ -175,26 +207,42 @@ export default function RegisterForm() {
             type={showPassword ? "text" : "password"}
             value={formData.password}
             onChange={handleInputChange}
-            placeholder="Create a password"
+            placeholder="••••••••"
             disabled={isLoading}
             required
+            className="w-full pr-20"
           />
-          <button
-            type="button"
-            onClick={() => setShowPassword(!showPassword)}
-            className="absolute right-3 top-1/2 -translate-y-1/2"
-          >
-            {showPassword ? (
-              <EyeOff className="h-4 w-4 text-gray-500" />
-            ) : (
-              <Eye className="h-4 w-4 text-gray-500" />
-            )}
-          </button>
+          <div className="absolute right-0 top-0 h-full flex items-center gap-1 pr-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 hover:bg-transparent"
+              onClick={generateStrongPassword}
+              title="Generate strong password"
+            >
+              <Wand2 className="h-4 w-4 text-muted-foreground hover:text-foreground transition-colors" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 hover:bg-transparent"
+              onClick={() => setShowPassword(!showPassword)}
+            >
+              {showPassword ? (
+                <EyeOff className="h-4 w-4 text-muted-foreground hover:text-foreground transition-colors" />
+              ) : (
+                <Eye className="h-4 w-4 text-muted-foreground hover:text-foreground transition-colors" />
+              )}
+            </Button>
+          </div>
         </div>
         <PasswordStrengthIndicator password={formData.password} />
       </div>
+
       <div className="space-y-2">
-        <Label htmlFor="confirmPassword">Confirm Password</Label>
+        <Label htmlFor="confirmPassword" className="text-sm font-medium">Confirm Password</Label>
         <div className="relative">
           <Input
             id="confirmPassword"
@@ -202,24 +250,48 @@ export default function RegisterForm() {
             type={showPassword ? "text" : "password"}
             value={formData.confirmPassword}
             onChange={handleInputChange}
-            placeholder="Confirm your password"
+            placeholder="••••••••"
             disabled={isLoading}
             required
+            className="w-full"
           />
         </div>
       </div>
-      <Button className="w-full" type="submit" disabled={isLoading}>
-        {isLoading ? "Creating account..." : "Create account"}
+
+      <Button
+        type="submit"
+        className="w-full font-medium"
+        disabled={isLoading}
+      >
+        {isLoading ? (
+          <div className="flex items-center justify-center gap-2">
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+            <span>Creating account...</span>
+          </div>
+        ) : (
+          "Create account"
+        )}
       </Button>
-      <p className="text-center text-sm text-muted-foreground">
-        Already have an account?{" "}
-        <Link
-          href="/auth/login"
-          className="text-primary hover:underline"
-        >
-          Sign in
-        </Link>
-      </p>
+
+      <div className="relative my-6">
+        <div className="absolute inset-0 flex items-center">
+          <div className="w-full border-t border-border"></div>
+        </div>
+        <div className="relative flex justify-center text-xs uppercase">
+          <span className="bg-background px-2 text-muted-foreground">
+            Already have an account?
+          </span>
+        </div>
+      </div>
+
+      <Button
+        type="button"
+        variant="outline"
+        className="w-full"
+        onClick={() => window.location.href = '/auth/login'}
+      >
+        Sign in
+      </Button>
     </form>
   );
 } 
