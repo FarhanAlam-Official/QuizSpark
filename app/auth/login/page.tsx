@@ -1,25 +1,21 @@
-import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
-import LoginForm from "@/components/auth/LoginForm";
+import LoginForm from '@/components/auth/LoginForm';
+import { Metadata } from 'next';
 
-export default async function LoginPage() {
-  const supabase = createClient();
+export const metadata: Metadata = {
+  title: 'Login | QuizSpark',
+  description: 'Login to your QuizSpark account',
+};
 
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  if (session) {
-    redirect("/dashboard");
-  }
-
+export default function LoginPage() {
   return (
-    <div className="flex min-h-screen items-center justify-center">
-      <div className="w-full max-w-md space-y-8 px-4 py-8">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold tracking-tight">Welcome back</h1>
-          <p className="text-sm text-muted-foreground">
-            Sign in to your account to continue
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-md w-full space-y-8">
+        <div>
+          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+            Sign in to your account
+          </h2>
+          <p className="mt-2 text-center text-sm text-gray-600">
+            Welcome back to QuizSpark
           </p>
         </div>
         <LoginForm />

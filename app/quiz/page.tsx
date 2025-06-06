@@ -1,270 +1,188 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { type Question, type Student } from "@/lib/api"
+import { type Question, type QuizAttempt } from "@/lib/supabase"
 import { useApp } from "@/lib/context/AppContext"
+import { useAuth } from "@/lib/context/AuthContext"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { AlertCircle, BookOpen, Trophy, Users, User, BookOpenCheck } from "lucide-react"
-import { Label } from "@/components/ui/label"
-import { QuestionCard } from "@/components/question-card"
-import { motion } from "framer-motion"
-import { useRouter } from "next/navigation"
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { motion } from "framer-motion"
+import { format } from "date-fns"
+import { useSound } from "@/components/sound-effects"
+import { Timer, Star, Activity, CheckCircle2, XCircle, Clock, Brain } from "lucide-react"
+import { Progress } from "@/components/ui/progress"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { AlertCircle } from "lucide-react"
 
 export default function QuizPage() {
-  const router = useRouter()
-  const { students, questions, updateStudent, loading } = useApp()
-  const [filteredQuestions, setFilteredQuestions] = useState<Question[]>([])
-  const [difficulty, setDifficulty] = useState<string>("all")
-  const [topic, setTopic] = useState<string>("all")
-  const [topics, setTopics] = useState<Array<{ name: string, count: number }>>([])
-  const [pickedStudentIds, setPickedStudentIds] = useState<number[]>([])
-  const [quizMode, setQuizMode] = useState<"individual" | "group">("individual")
-  const [selectedGroups, setSelectedGroups] = useState<string[]>([])
-  const [groups, setGroups] = useState<string[]>([])
-  const [groupScores, setGroupScores] = useState<Record<string, number>>({})
-  const [currentGroup, setCurrentGroup] = useState<string | null>(null)
-  const [groupParticipation, setGroupParticipation] = useState<Record<string, number>>({})
-  const [selectedQuestionCount, setSelectedQuestionCount] = useState<number>(5)
-
+  const { user } = useAuth()
+  const { questions, loading } = useApp()
+  const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null)
+  const [selectedOption, setSelectedOption] = useState<number | null>(null)
+  const [timeLeft, setTimeLeft] = useState<number>(0)
+  const [isAnswered, setIsAnswered] = useState(false)
+  const [score, setScore] = useState(0)
+  const [attempts, setAttempts] = useState<QuizAttempt[]>([])
   const [quizStarted, setQuizStarted] = useState(false)
-  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
-  const [quizResults, setQuizResults] = useState<Array<{ studentId: string | null; correct: boolean; group?: string }>>([])
-
-  // Add new state for custom question count
-  const [customQuestionCount, setCustomQuestionCount] = useState<string>("")
-  const [showCustomCount, setShowCustomCount] = useState(false)
+  const [showExplanation, setShowExplanation] = useState(false)
+  const { playSound } = useSound()
 
   useEffect(() => {
-    if (!loading) {
-      // Extract unique topics with question counts
-      const topicCounts = questions.reduce((acc, q) => {
-        acc[q.topic] = (acc[q.topic] || 0) + 1
-        return acc
-      }, {} as Record<string, number>)
-
-      const uniqueTopics = Object.entries(topicCounts).map(([name, count]) => ({
-        name,
-        count
-      })).sort((a, b) => a.name.localeCompare(b.name))
-
-      setTopics(uniqueTopics)
-      
-      // Extract unique groups
-      const uniqueGroups = Array.from(new Set(students.map((s) => s.group).filter(Boolean)))
-      setGroups(uniqueGroups)
+    if (user && !loading) {
+      // Load user's quiz attempts
+      loadAttempts()
     }
-  }, [loading, questions, students])
+  }, [user, loading])
 
-  // Reset picked students when moving to next question in group mode
-  useEffect(() => {
-    if (quizMode === "group") {
-      setPickedStudentIds([])
+  const loadAttempts = async () => {
+    try {
+      // In a real app, you would fetch this from your API
+      // For now, we'll use mock data
+      const mockAttempts: QuizAttempt[] = []
+      setAttempts(mockAttempts)
+    } catch (error) {
+      console.error('Failed to load attempts:', error)
     }
-  }, [currentQuestionIndex, quizMode])
-
-  useEffect(() => {
-    // Filter questions based on selected difficulty and topic
-    let filtered = [...questions]
-
-    if (difficulty !== "all") {
-      filtered = filtered.filter((q) => q.difficulty === difficulty)
-    }
-
-    if (topic !== "all") {
-      filtered = filtered.filter((q) => q.topic === topic)
-    }
-
-    // Randomly select questions based on selectedQuestionCount
-    if (filtered.length > selectedQuestionCount) {
-      const shuffled = [...filtered].sort(() => Math.random() - 0.5)
-      filtered = shuffled.slice(0, selectedQuestionCount)
-    }
-
-    setFilteredQuestions(filtered)
-  }, [difficulty, topic, questions, selectedQuestionCount])
-
-  const handleAnswer = async (isCorrect: boolean, studentId: number | null) => {
-    setQuizResults([...quizResults, { studentId, correct: isCorrect, group: currentGroup }])
-
-    // Award points if correct
-    if (isCorrect) {
-      if (studentId) {
-        const currentQuestion = filteredQuestions[currentQuestionIndex]
-        const points = getPointsForDifficulty(currentQuestion.difficulty)
-        const student = students.find(s => s.id === studentId)
-        
-        if (student && student.group) {
-          // Update group score
-          setGroupScores(prev => ({
-            ...prev,
-            [student.group]: (prev[student.group] || 0) + points
-          }))
-          
-          // Update individual score
-          try {
-            await updateStudent(studentId, {
-              score: student.score + points
-            })
-            
-            // Track group participation
-            setGroupParticipation(prev => ({
-              ...prev,
-              [student.group]: (prev[student.group] || 0) + 1
-            }))
-
-            // Add to picked students
-            if (!pickedStudentIds.includes(studentId)) {
-              setPickedStudentIds(prev => [...prev, studentId])
-            }
-          } catch (error) {
-            console.error('Failed to update student score:', error)
-          }
-        }
-      }
-    }
-
-    // Move to next group after answer submission
-    if (quizMode === "group" && selectedGroups.length > 1) {
-      const nextGroup = getNextGroup()
-      setCurrentGroup(nextGroup)
-      // Reset picked students when switching groups
-      setPickedStudentIds([])
-    }
-  }
-
-  const handlePassTurn = () => {
-    if (quizMode === "group" && selectedGroups.length > 1) {
-      const nextGroup = getNextGroup()
-      setCurrentGroup(nextGroup)
-      setPickedStudentIds([])
-    }
-  }
-
-  const getPointsForDifficulty = (difficulty: string): number => {
-    switch (difficulty) {
-      case "Easy":
-        return 1
-      case "Normal":
-        return 2
-      case "Hard":
-        return 3
-      default:
-        return 1
-    }
-  }
-
-  const handleNextQuestion = () => {
-    setCurrentQuestionIndex((prev) => prev + 1)
-  }
-
-  const handleEndQuiz = () => {
-    setQuizStarted(false)
-    // Navigate to leaderboard
-    router.push("/leaderboard")
-  }
-
-  const getNextGroup = () => {
-    const currentIndex = selectedGroups.indexOf(currentGroup || "")
-    const nextIndex = (currentIndex + 1) % selectedGroups.length
-    return selectedGroups[nextIndex]
   }
 
   const startQuiz = () => {
-    if (filteredQuestions.length === 0) return
+    if (questions.length === 0) return
 
+    const randomQuestion = questions[Math.floor(Math.random() * questions.length)]
+    setCurrentQuestion(randomQuestion)
+    setTimeLeft(randomQuestion.time_limit || 60)
+    setSelectedOption(null)
+    setIsAnswered(false)
+    setShowExplanation(false)
     setQuizStarted(true)
-    setCurrentQuestionIndex(0)
-    setQuizResults([])
-    setPickedStudentIds([])
-    setGroupParticipation({})
-    setGroupScores({})
-    
-    // Set initial group for group mode
-    if (quizMode === "group" && selectedGroups.length > 0) {
-      setCurrentGroup(selectedGroups[0])
-    }
+    playSound("click")
   }
 
-  const getAvailableStudents = () => {
-    if (quizMode === "individual") {
-      return students.filter(s => !pickedStudentIds.includes(s.id))
-    } else {
-      // If quiz hasn't started yet, show all students from selected groups
-      if (!quizStarted) {
-        return students.filter(s => selectedGroups.includes(s.group || ""))
-      }
-      // During quiz, only show students from current group
-      return students
-        .filter(s => s.group === currentGroup)
-        .sort((a, b) => {
-          const aParticipation = groupParticipation[a.group || ""] || 0
-          const bParticipation = groupParticipation[b.group || ""] || 0
-          return aParticipation - bParticipation
+  useEffect(() => {
+    let timer: NodeJS.Timeout
+    if (quizStarted && timeLeft > 0 && !isAnswered) {
+      timer = setInterval(() => {
+        setTimeLeft((prev) => {
+          if (prev <= 1) {
+            clearInterval(timer)
+            handleTimeout()
+            return 0
+          }
+          return prev - 1
         })
+      }, 1000)
+    }
+    return () => clearInterval(timer)
+  }, [quizStarted, timeLeft, isAnswered])
+
+  const handleTimeout = async () => {
+    if (!currentQuestion || !user) return
+
+    setIsAnswered(true)
+    playSound("error")
+
+    try {
+      // Record the attempt
+      const attempt: Partial<QuizAttempt> = {
+        user_id: user.id,
+        question_id: currentQuestion.id,
+        selected_option: null,
+        is_correct: false,
+        time_taken: currentQuestion.time_limit || 60,
+        points_earned: 0,
+        metadata: {
+          result: "timeout",
+          question_difficulty: currentQuestion.difficulty,
+          question_topic: currentQuestion.topic
+        }
+      }
+
+      // In a real app, you would save this to your database
+      console.log('Recording attempt:', attempt)
+    } catch (error) {
+      console.error('Failed to record attempt:', error)
     }
   }
 
-  const handleCustomQuestionCount = (value: string) => {
-    const num = parseInt(value)
-    if (!isNaN(num) && num > 0) {
-      setSelectedQuestionCount(num)
+  const handleAnswer = async (optionIndex: number) => {
+    if (!currentQuestion || !user || isAnswered) return
+
+    setSelectedOption(optionIndex)
+    setIsAnswered(true)
+    const isCorrect = optionIndex === currentQuestion.correct_option
+    const timeTaken = (currentQuestion.time_limit || 60) - timeLeft
+    const pointsEarned = isCorrect ? currentQuestion.points || 1 : 0
+
+    if (isCorrect) {
+      setScore((prev) => prev + pointsEarned)
+      playSound("success")
+    } else {
+      playSound("error")
     }
-    setCustomQuestionCount(value)
+
+    try {
+      // Record the attempt
+      const attempt: Partial<QuizAttempt> = {
+        user_id: user.id,
+        question_id: currentQuestion.id,
+        selected_option: optionIndex,
+        is_correct: isCorrect,
+        time_taken: timeTaken,
+        points_earned: pointsEarned,
+        metadata: {
+          result: isCorrect ? "correct" : "incorrect",
+          question_difficulty: currentQuestion.difficulty,
+          question_topic: currentQuestion.topic,
+          response_time: timeTaken
+        }
+      }
+
+      // In a real app, you would save this to your database
+      console.log('Recording attempt:', attempt)
+    } catch (error) {
+      console.error('Failed to record attempt:', error)
+    }
   }
 
-  const handleQuizModeChange = (value: "individual" | "group") => {
-    setQuizMode(value)
-    setSelectedGroups([])
-    setCurrentGroup(null)
-    setPickedStudentIds([])
+  const getDifficultyColor = (difficulty: string) => {
+    switch (difficulty.toLowerCase()) {
+      case "easy":
+        return "bg-gradient-to-r from-green-400 to-green-500"
+      case "normal":
+        return "bg-gradient-to-r from-amber-400 to-amber-500"
+      case "hard":
+        return "bg-gradient-to-r from-red-400 to-red-500"
+      default:
+        return "bg-gradient-to-r from-gray-400 to-gray-500"
+    }
   }
-
-  // Add new component for group selection
-  const GroupSelection = () => (
-    <div className="space-y-4">
-      <Label>Select Groups to Compete</Label>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-        {groups.map((group) => (
-          <Badge
-            key={group}
-            variant={selectedGroups.includes(group) ? "default" : "outline"}
-            className="cursor-pointer text-center"
-            onClick={() => {
-              setSelectedGroups(prev =>
-                prev.includes(group)
-                  ? prev.filter(g => g !== group)
-                  : [...prev, group]
-              )
-            }}
-          >
-            Group {group}
-          </Badge>
-        ))}
-      </div>
-      {selectedGroups.length > 0 && (
-        <div className="mt-4">
-          <Alert>
-            <Users className="h-4 w-4" />
-            <AlertTitle>Selected Groups</AlertTitle>
-            <AlertDescription>
-              {selectedGroups.map(g => `Group ${g}`).join(" vs ")}
-            </AlertDescription>
-          </Alert>
-        </div>
-      )}
-    </div>
-  )
 
   if (loading) {
     return (
-      <div className="flex h-[calc(100vh-4rem)] items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-center">
+          <h2 className="text-xl font-semibold mb-2">Loading...</h2>
+          <p className="text-muted-foreground">Please wait while we load the quiz.</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (questions.length === 0) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Quiz</h1>
+          <p className="text-muted-foreground">Test your knowledge with random questions</p>
+        </div>
+
+        <Alert>
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>No questions available</AlertTitle>
+          <AlertDescription>Add some questions to get started with the quiz.</AlertDescription>
+        </Alert>
       </div>
     )
   }
@@ -272,264 +190,172 @@ export default function QuizPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Quiz Session</h1>
-        <p className="text-muted-foreground">Conduct a quiz session with your students</p>
+        <h1 className="text-3xl font-bold tracking-tight">Quiz</h1>
+        <p className="text-muted-foreground">Test your knowledge with random questions</p>
       </div>
 
-      {!quizStarted ? (
+      <div className="grid gap-6 md:grid-cols-2">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
           <Card className="overflow-hidden rounded-2xl bg-gradient-to-br from-white to-gray-50 shadow-xl dark:from-gray-800 dark:to-gray-900">
             <CardHeader className="border-b dark:border-gray-700">
-              <CardTitle className="flex items-center gap-2">
-                <BookOpen className="h-5 w-5 text-indigo-500" />
-                Start a New Quiz
-              </CardTitle>
-              <CardDescription>Select quiz parameters and start a new session</CardDescription>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Current Question</CardTitle>
+                  <CardDescription>Answer questions to earn points</CardDescription>
+                </div>
+                <Button
+                  onClick={startQuiz}
+                  disabled={!questions.length}
+                  className="gap-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white"
+                >
+                  <Brain className="h-4 w-4" />
+                  {currentQuestion ? "Next Question" : "Start Quiz"}
+                </Button>
+              </div>
             </CardHeader>
-            <CardContent className="space-y-6 p-6">
-              <Tabs defaultValue="topics" className="w-full">
-                <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="topics" className="flex items-center gap-2">
-                    <BookOpenCheck className="h-4 w-4" />
-                    Topics & Difficulty
-                  </TabsTrigger>
-                  <TabsTrigger value="mode" className="flex items-center gap-2">
-                    <Users className="h-4 w-4" />
-                    Quiz Mode
-                  </TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="topics" className="space-y-6">
-                  <div className="grid gap-6 md:grid-cols-2">
-                    <div className="space-y-4">
-                      <Label>Topic</Label>
-                      <div className="max-h-[200px] overflow-y-auto rounded-lg border p-4 scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600">
-                        <div className="flex flex-wrap gap-2">
-                          <Badge
-                            variant={topic === "all" ? "default" : "outline"}
-                            className="cursor-pointer"
-                            onClick={() => setTopic("all")}
-                          >
-                            All Topics
-                          </Badge>
-                          {topics.map((t) => (
-                            <Badge
-                              key={t.name}
-                              variant={topic === t.name ? "default" : "outline"}
-                              className="cursor-pointer whitespace-nowrap"
-                              onClick={() => setTopic(t.name)}
-                            >
-                              {t.name} ({t.count})
-                            </Badge>
-                          ))}
-                        </div>
+            <CardContent className="p-6">
+              {currentQuestion ? (
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between">
+                    <Badge className={`${getDifficultyColor(currentQuestion.difficulty)}`}>
+                      {currentQuestion.difficulty}
+                    </Badge>
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-1">
+                        <Clock className="h-4 w-4" />
+                        <span>{timeLeft}s</span>
                       </div>
-                    </div>
-
-                    <div className="space-y-4">
-                      <Label>Difficulty</Label>
-                      <div className="rounded-lg border p-4">
-                        <div className="flex flex-wrap gap-2">
-                          <Badge
-                            variant={difficulty === "all" ? "default" : "outline"}
-                            className="cursor-pointer"
-                            onClick={() => setDifficulty("all")}
-                          >
-                            All Difficulties
-                          </Badge>
-                          {["Easy", "Normal", "Hard"].map((d) => (
-                            <Badge
-                              key={d}
-                              variant={difficulty === d ? "default" : "outline"}
-                              className="cursor-pointer"
-                              onClick={() => setDifficulty(d)}
-                            >
-                              {d}
-                            </Badge>
-                          ))}
-                        </div>
+                      <div className="flex items-center gap-1">
+                        <Star className="h-4 w-4" />
+                        <span>{currentQuestion.points || 1} points</span>
                       </div>
                     </div>
                   </div>
 
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <Label>Number of Questions</Label>
+                  <Progress value={(timeLeft / (currentQuestion.time_limit || 60)) * 100} />
+
+                  <div>
+                    <h3 className="mb-4 text-lg font-semibold">{currentQuestion.question}</h3>
+                    <div className="space-y-2">
+                      {Object.entries(currentQuestion.options).map(([key, value]) => (
+                        <Button
+                          key={key}
+                          variant={selectedOption === parseInt(key) ? "default" : "outline"}
+                          className="w-full justify-start gap-2"
+                          onClick={() => handleAnswer(parseInt(key))}
+                          disabled={isAnswered}
+                        >
+                          {isAnswered && parseInt(key) === currentQuestion.correct_option && (
+                            <CheckCircle2 className="h-4 w-4 text-green-500" />
+                          )}
+                          {isAnswered && parseInt(key) === selectedOption && selectedOption !== currentQuestion.correct_option && (
+                            <XCircle className="h-4 w-4 text-red-500" />
+                          )}
+                          {value}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {isAnswered && currentQuestion.explanation && (
+                    <div className="mt-4">
                       <Button
-                        variant="ghost"
-                        className="h-auto p-0 text-xs text-muted-foreground"
-                        onClick={() => setShowCustomCount(!showCustomCount)}
+                        variant="outline"
+                        onClick={() => setShowExplanation(!showExplanation)}
+                        className="w-full"
                       >
-                        {showCustomCount ? "Show Presets" : "Custom Count"}
+                        {showExplanation ? "Hide Explanation" : "Show Explanation"}
                       </Button>
-                    </div>
-                    {showCustomCount ? (
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="number"
-                          value={customQuestionCount}
-                          onChange={(e) => handleCustomQuestionCount(e.target.value)}
-                          placeholder="Enter number of questions"
-                          min="1"
-                          className="w-full rounded-lg border p-2"
-                        />
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                        {[5, 10, 15, 20, 25, 30, 40, 50].map((count) => (
-                          <Badge
-                            key={count}
-                            variant={selectedQuestionCount === count ? "default" : "outline"}
-                            className="cursor-pointer text-center"
-                            onClick={() => setSelectedQuestionCount(count)}
-                          >
-                            {count} Questions
-                          </Badge>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <Alert>
-                    <BookOpenCheck className="h-4 w-4" />
-                    <AlertTitle>Selected Question Set</AlertTitle>
-                    <AlertDescription className="space-y-2">
-                      <div>
-                        {filteredQuestions.length} questions available from {topic === "all" ? "all topics" : `"${topic}"`} 
-                        {difficulty !== "all" ? ` with ${difficulty} difficulty` : ""}
-                      </div>
-                      {filteredQuestions.length < selectedQuestionCount && (
-                        <div className="text-yellow-600 dark:text-yellow-400">
-                          Note: Only {filteredQuestions.length} questions available with current filters
+                      {showExplanation && (
+                        <div className="mt-2 rounded-lg bg-muted p-4">
+                          <p className="text-sm">{currentQuestion.explanation}</p>
                         </div>
                       )}
-                    </AlertDescription>
-                  </Alert>
-                </TabsContent>
-
-                <TabsContent value="mode" className="space-y-6">
-                  <div className="space-y-4">
-                    <Label>Quiz Mode</Label>
-                    <RadioGroup
-                      value={quizMode}
-                      onValueChange={handleQuizModeChange}
-                      className="grid grid-cols-2 gap-4"
-                    >
-                      <Label
-                        htmlFor="individual"
-                        className={`flex cursor-pointer items-center justify-center gap-2 rounded-lg border p-4 ${
-                          quizMode === "individual"
-                            ? "border-primary bg-primary/10"
-                            : "hover:border-primary hover:bg-primary/5"
-                        }`}
-                      >
-                        <RadioGroupItem value="individual" id="individual" className="sr-only" />
-                        <User className="h-5 w-5" />
-                        <span>Individual Mode</span>
-                      </Label>
-                      <Label
-                        htmlFor="group"
-                        className={`flex cursor-pointer items-center justify-center gap-2 rounded-lg border p-4 ${
-                          quizMode === "group" ? "border-primary bg-primary/10" : "hover:border-primary hover:bg-primary/5"
-                        }`}
-                      >
-                        <RadioGroupItem value="group" id="group" className="sr-only" />
-                        <Users className="h-5 w-5" />
-                        <span>Group Mode</span>
-                      </Label>
-                    </RadioGroup>
-                  </div>
-
-                  {quizMode === "group" && <GroupSelection />}
-
-                  {quizMode === "group" && selectedGroups.length < 2 && (
-                    <Alert variant="destructive">
-                      <AlertCircle className="h-4 w-4" />
-                      <AlertTitle>Insufficient Groups</AlertTitle>
-                      <AlertDescription>
-                        Please select at least 2 groups for group competition mode.
-                      </AlertDescription>
-                    </Alert>
+                    </div>
                   )}
-                </TabsContent>
-              </Tabs>
-
-              {getAvailableStudents().length === 0 && (
-                <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertTitle>No students available</AlertTitle>
-                  <AlertDescription>
-                    {quizMode === "group" && !selectedGroups.length
-                      ? "Please select groups to start the quiz."
-                      : quizMode === "group"
-                      ? "No students found in the selected groups."
-                      : "Please add students before starting a quiz."}
-                  </AlertDescription>
-                </Alert>
+                </div>
+              ) : (
+                <div className="text-center text-muted-foreground">
+                  Click the button above to start answering questions
+                </div>
               )}
             </CardContent>
-            <CardFooter className="flex justify-between border-t p-6 dark:border-gray-700">
-              <Button variant="outline" onClick={() => router.push("/leaderboard")} className="gap-2">
-                <Trophy className="h-4 w-4" />
-                View Leaderboard
-              </Button>
-              <Button
-                onClick={startQuiz}
-                disabled={
-                  filteredQuestions.length === 0 ||
-                  getAvailableStudents().length === 0 ||
-                  (quizMode === "group" && selectedGroups.length < 2)
-                }
-                className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white"
-              >
-                Start Quiz with {filteredQuestions.length} Questions
-              </Button>
-            </CardFooter>
           </Card>
         </motion.div>
-      ) : (
-        <>
-          {quizMode === "group" && (
-            <Card className="mb-4">
-              <CardContent className="p-4">
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-semibold">Group Scores</h3>
-                    <Badge variant="outline">Current Turn: Group {currentGroup}</Badge>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, delay: 0.1 }}
+        >
+          <Card className="overflow-hidden rounded-2xl bg-gradient-to-br from-white to-gray-50 shadow-xl dark:from-gray-800 dark:to-gray-900">
+            <CardHeader className="border-b dark:border-gray-700">
+              <CardTitle>Your Progress</CardTitle>
+              <CardDescription>Track your quiz performance</CardDescription>
+            </CardHeader>
+            <CardContent className="p-6">
+              <div className="mb-6 grid grid-cols-2 gap-4">
+                <div className="rounded-xl border p-4 dark:border-gray-700">
+                  <div className="flex items-center gap-2">
+                    <Star className="h-5 w-5 text-yellow-500" />
+                    <h3 className="font-semibold">Score</h3>
                   </div>
-                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-                    {selectedGroups.map(group => (
-                      <div
-                        key={group}
-                        className={`rounded-lg border p-4 ${
-                          group === currentGroup ? "border-primary bg-primary/5" : ""
-                        }`}
-                      >
-                        <div className="text-sm text-muted-foreground">Group {group}</div>
-                        <div className="text-2xl font-bold">{groupScores[group] || 0}</div>
-                      </div>
-                    ))}
-                  </div>
+                  <p className="mt-2 text-2xl font-bold">{score} points</p>
                 </div>
-              </CardContent>
-            </Card>
-          )}
-          <QuestionCard
-            question={filteredQuestions[currentQuestionIndex]}
-            students={getAvailableStudents()}
-            pickedStudentIds={pickedStudentIds}
-            onAnswer={handleAnswer}
-            onNext={handleNextQuestion}
-            onEnd={handleEndQuiz}
-            isLast={currentQuestionIndex === filteredQuestions.length - 1}
-            currentQuestionIndex={currentQuestionIndex}
-            totalQuestions={filteredQuestions.length}
-            currentGroup={currentGroup}
-            isGroupMode={quizMode === "group"}
-            onPassTurn={handlePassTurn}
-          />
-        </>
-      )}
+                <div className="rounded-xl border p-4 dark:border-gray-700">
+                  <div className="flex items-center gap-2">
+                    <Activity className="h-5 w-5 text-blue-500" />
+                    <h3 className="font-semibold">Attempts</h3>
+                  </div>
+                  <p className="mt-2 text-2xl font-bold">{attempts.length}</p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <h3 className="font-semibold">Recent Attempts</h3>
+                {attempts.length > 0 ? (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Result</TableHead>
+                        <TableHead>Points</TableHead>
+                        <TableHead>Time</TableHead>
+                        <TableHead>Date</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {attempts.slice(0, 5).map((attempt) => (
+                        <TableRow key={attempt.id}>
+                          <TableCell>
+                            <Badge
+                              className={
+                                attempt.is_correct
+                                  ? "bg-green-500 text-white"
+                                  : "bg-red-500 text-white"
+                              }
+                            >
+                              {attempt.is_correct ? "Correct" : "Incorrect"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>{attempt.points_earned}</TableCell>
+                          <TableCell>{attempt.time_taken}s</TableCell>
+                          <TableCell>
+                            {format(new Date(attempt.created_at), "MMM d, HH:mm")}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                ) : (
+                  <div className="rounded-lg border p-4 text-center text-muted-foreground dark:border-gray-700">
+                    No attempts yet. Start the quiz to track your progress!
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      </div>
     </div>
   )
 }

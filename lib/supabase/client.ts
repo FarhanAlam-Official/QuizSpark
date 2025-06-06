@@ -1,6 +1,8 @@
 import { createBrowserClient } from '@supabase/ssr'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from '@/types/supabase'
 
-let client: ReturnType<typeof createBrowserClient> | null = null
+let client: SupabaseClient<Database> | null = null
 
 export const createClient = () => {
   if (typeof window === 'undefined') {
@@ -17,6 +19,14 @@ export const createClient = () => {
     return null;
   }
 
-  client = createBrowserClient(supabaseUrl, supabaseAnonKey);
+  client = createBrowserClient<Database>(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: true,
+      storageKey: 'supabase.auth.token',
+      storage: window.localStorage,
+      detectSessionInUrl: true,
+      flowType: 'pkce'
+    }
+  });
   return client;
 } 

@@ -1,13 +1,15 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { type Task, type Student } from "@/lib/api"
+import { type Task } from "@/lib/supabase"
 import { useApp } from "@/lib/context/AppContext"
+import { useAuth } from "@/lib/context/AuthContext"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Edit, Plus, Trash, Search, Filter, Calendar, Clock, Tag, CheckCircle2 } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -17,182 +19,264 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { CheckCircle, Edit, Plus, Trash, FileText, Paperclip, Download } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Textarea } from "@/components/ui/textarea"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { AlertCircle } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import { motion } from "framer-motion"
+import { format } from "date-fns"
+import { useSound } from "@/components/sound-effects"
 
 export default function TasksPage() {
-  const { tasks, students, addTask, updateTask, deleteTask, loading } = useApp()
+  const { user } = useAuth()
+  const { tasks, addTask, updateTask, deleteTask, loading } = useApp()
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [editingTask, setEditingTask] = useState<Task | null>(null)
+  const { playSound } = useSound()
 
-  // Add this at the top with other state declarations
-  const UNASSIGNED_VALUE = "unassigned"
+  // Filter state
+  const [filteredTasks, setFilteredTasks] = useState<Task[]>([])
+  const [searchQuery, setSearchQuery] = useState("")
+  const [selectedStatus, setSelectedStatus] = useState<string>("all")
+  const [selectedPriority, setSelectedPriority] = useState<string>("all")
+  const [selectedTag, setSelectedTag] = useState<string>("all")
+  const [showCompleted, setShowCompleted] = useState(false)
+  const [tags, setTags] = useState<Array<{ name: string, count: number }>>([])
 
-  interface FormData {
-    title: string
-    description: string
-    assignedTo: string
-    assignedGroup: string
-    type: "Verbal" | "Written" | "Numerical"
-    attachment: File | null
-  }
-
-  const initialFormState: FormData = {
+  // Form state
+  const [formData, setFormData] = useState({
     title: "",
     description: "",
-    assignedTo: UNASSIGNED_VALUE,
-    assignedGroup: UNASSIGNED_VALUE,
-    type: "Verbal",
-    attachment: null
-  }
+    status: "pending" as "pending" | "in_progress" | "completed",
+    priority: "medium" as "low" | "medium" | "high",
+    due_date: "",
+    assigned_to: "",
+    tags: [] as string[],
+    metadata: {} as Record<string, any>
+  })
 
-  const [formData, setFormData] = useState<FormData>(initialFormState)
-
-  const [groups, setGroups] = useState<string[]>([])
-
+  // Extract unique tags and their counts
   useEffect(() => {
-    // Extract unique groups from students
-    const uniqueGroups = Array.from(new Set(students.map((s) => s.group).filter(Boolean)))
-    setGroups(uniqueGroups)
-  }, [students])
+    if (!loading) {
+      const tagCounts = tasks.reduce((acc, t) => {
+        t.tags?.forEach(tag => {
+          acc[tag] = (acc[tag] || 0) + 1
+        })
+        return acc
+      }, {} as Record<string, number>)
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setFormData({ ...formData, attachment: e.target.files[0] })
+      const uniqueTags = Object.entries(tagCounts).map(([name, count]) => ({
+        name,
+        count
+      })).sort((a, b) => a.name.localeCompare(b.name))
+
+      setTags(uniqueTags)
     }
-  }
+  }, [loading, tasks])
 
-  const uploadFile = async (file: File): Promise<{ url: string; name: string }> => {
-    // In a real application, you would upload to a server/cloud storage
-    // For now, we'll create a local URL
-    const url = URL.createObjectURL(file)
-    return { url, name: file.name }
-  }
+  // Filter tasks
+  useEffect(() => {
+    let filtered = [...tasks]
+
+    // Apply search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase()
+      filtered = filtered.filter(t => 
+        t.title.toLowerCase().includes(query) || 
+        t.description?.toLowerCase().includes(query) ||
+        t.tags?.some(tag => tag.toLowerCase().includes(query))
+      )
+    }
+
+    // Apply status filter
+    if (selectedStatus !== "all") {
+      filtered = filtered.filter(t => t.status === selectedStatus)
+    }
+
+    // Apply priority filter
+    if (selectedPriority !== "all") {
+      filtered = filtered.filter(t => t.priority === selectedPriority)
+    }
+
+    // Apply tag filter
+    if (selectedTag !== "all") {
+      filtered = filtered.filter(t => t.tags?.includes(selectedTag))
+    }
+
+    // Filter completed tasks
+    if (!showCompleted) {
+      filtered = filtered.filter(t => t.status !== "completed")
+    }
+
+    setFilteredTasks(filtered)
+  }, [tasks, searchQuery, selectedStatus, selectedPriority, selectedTag, showCompleted])
 
   const resetForm = () => {
-    setFormData(initialFormState)
+    setFormData({
+      title: "",
+      description: "",
+      status: "pending",
+      priority: "medium",
+      due_date: "",
+      assigned_to: "",
+      tags: [],
+      metadata: {}
+    })
   }
 
   const handleAddTask = async () => {
-    if (formData.title.trim()) {
-      try {
-        let attachmentUrl = null
-        let attachmentName = null
+    if (!user) return
 
-        if (formData.attachment) {
-          const { url, name } = await uploadFile(formData.attachment)
-          attachmentUrl = url
-          attachmentName = name
-        }
+    // Validate form
+    if (!formData.title.trim()) {
+      return
+    }
 
-        await addTask({
-          title: formData.title.trim(),
-          description: formData.description.trim(),
-          type: formData.type,
-          assignedTo: formData.assignedTo === UNASSIGNED_VALUE ? null : parseInt(formData.assignedTo),
-          assignedGroup: formData.assignedGroup === UNASSIGNED_VALUE ? null : formData.assignedGroup,
-          attachmentUrl,
-          attachmentName,
-          completed: false
-        })
-        setIsAddDialogOpen(false)
-        resetForm()
-      } catch (error) {
-        console.error('Error adding task:', error)
-      }
+    try {
+      await addTask({
+        user_id: user.id,
+        title: formData.title.trim(),
+        description: formData.description.trim(),
+        status: formData.status,
+        priority: formData.priority,
+        due_date: formData.due_date ? new Date(formData.due_date).toISOString() : null,
+        assigned_to: formData.assigned_to || null,
+        tags: formData.tags,
+        metadata: {
+          created_via: "web_interface",
+          ...formData.metadata
+        },
+        is_active: true
+      })
+      resetForm()
+      setIsAddDialogOpen(false)
+      playSound("click")
+    } catch (error) {
+      console.error('Failed to add task:', error)
     }
   }
 
   const handleEditTask = async () => {
-    if (!editingTask || !formData.title.trim()) return
+    if (!editingTask || !user) return
+
+    // Validate form
+    if (!formData.title.trim()) {
+      return
+    }
 
     try {
-      let attachmentUrl = editingTask.attachmentUrl
-      let attachmentName = editingTask.attachmentName
-
-      if (formData.attachment) {
-        const { url, name } = await uploadFile(formData.attachment)
-        attachmentUrl = url
-        attachmentName = name
-      }
-
-      const updatedTask: Partial<Task> = {
+      await updateTask(editingTask.id, {
         title: formData.title.trim(),
         description: formData.description.trim(),
-        type: formData.type,
-        assignedTo: formData.assignedTo === UNASSIGNED_VALUE ? null : parseInt(formData.assignedTo),
-        assignedGroup: formData.assignedGroup === UNASSIGNED_VALUE ? null : formData.assignedGroup,
-        attachmentUrl,
-        attachmentName
-      }
-
-      await updateTask(editingTask.id, updatedTask)
+        status: formData.status,
+        priority: formData.priority,
+        due_date: formData.due_date ? new Date(formData.due_date).toISOString() : null,
+        assigned_to: formData.assigned_to || null,
+        tags: formData.tags,
+        metadata: {
+          ...editingTask.metadata,
+          last_updated: new Date().toISOString(),
+          updated_via: "web_interface"
+        },
+        updated_by: user.id
+      })
       setEditingTask(null)
-      setIsEditDialogOpen(false)
       resetForm()
+      setIsEditDialogOpen(false)
+      playSound("click")
     } catch (error) {
       console.error('Failed to update task:', error)
     }
   }
 
-  const handleDeleteTask = async (id: number) => {
+  const handleDeleteTask = async (id: string) => {
     try {
       await deleteTask(id)
+      playSound("click")
     } catch (error) {
       console.error('Failed to delete task:', error)
     }
   }
 
-  const handleToggleCompletion = async (id: number) => {
+  const handleCompleteTask = async (task: Task) => {
+    if (!user) return
+
     try {
-      const task = tasks.find(t => t.id === id)
-      if (task) {
-        await updateTask(id, { completed: !task.completed })
-      }
+      await updateTask(task.id, {
+        status: "completed",
+        completed_at: new Date().toISOString(),
+        metadata: {
+          ...task.metadata,
+          completed_by: user.id,
+          completed_at: new Date().toISOString()
+        },
+        updated_by: user.id
+      })
+      playSound("success")
     } catch (error) {
-      console.error('Failed to toggle task completion:', error)
+      console.error('Failed to complete task:', error)
     }
   }
 
   const openEditDialog = (task: Task) => {
     setEditingTask(task)
     setFormData({
-      title: task.title || "",
+      title: task.title,
       description: task.description || "",
-      type: task.type,
-      assignedTo: task.assignedTo?.toString() || UNASSIGNED_VALUE,
-      assignedGroup: task.assignedGroup || UNASSIGNED_VALUE,
-      attachment: null
+      status: task.status as any,
+      priority: task.priority as any,
+      due_date: task.due_date ? new Date(task.due_date).toISOString().split('T')[0] : "",
+      assigned_to: task.assigned_to || "",
+      tags: task.tags || [],
+      metadata: task.metadata || {}
     })
     setIsEditDialogOpen(true)
+    playSound("click")
   }
 
-  const getTaskTypeColor = (type: string) => {
-    switch (type) {
-      case "Verbal":
+  const handleTagsChange = (value: string) => {
+    const newTags = value.split(",").map(tag => tag.trim()).filter(Boolean)
+    setFormData(prev => ({
+      ...prev,
+      tags: newTags
+    }))
+  }
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "pending":
+        return "bg-yellow-500"
+      case "in_progress":
         return "bg-blue-500"
-      case "Written":
-        return "bg-purple-500"
-      case "Numerical":
-        return "bg-orange-500"
+      case "completed":
+        return "bg-green-500"
       default:
         return "bg-gray-500"
     }
   }
 
-  const getStudentName = (id: number | null) => {
-    if (!id) return "Unassigned"
-    const student = students.find((s) => s.id === id)
-    return student ? student.name : "Unknown"
+  const getPriorityColor = (priority: string) => {
+    switch (priority) {
+      case "low":
+        return "bg-green-500"
+      case "medium":
+        return "bg-yellow-500"
+      case "high":
+        return "bg-red-500"
+      default:
+        return "bg-gray-500"
+    }
   }
 
   if (loading) {
     return (
-      <div className="flex h-[calc(100vh-4rem)] items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-center">
+          <h2 className="text-xl font-semibold mb-2">Loading...</h2>
+          <p className="text-muted-foreground">Please wait while we fetch your tasks.</p>
+        </div>
       </div>
     )
   }
@@ -202,331 +286,274 @@ export default function TasksPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Tasks</h1>
-          <p className="text-muted-foreground">Manage tasks for your students</p>
+          <p className="text-muted-foreground">Manage and track your tasks</p>
         </div>
-        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Task
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Add New Task</DialogTitle>
-              <DialogDescription>Create a new task for your students</DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
-                <Label htmlFor="task-title">Task Title</Label>
-                <Input
-                  id="task-title"
-                  value={formData.title}
-                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                  placeholder="Enter task description"
-                />
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="task-type">Task Type</Label>
-                <Select
-                  value={formData.type}
-                  onValueChange={(value: "Verbal" | "Written" | "Numerical") =>
-                    setFormData({ ...formData, type: value })
-                  }
-                >
-                  <SelectTrigger id="task-type">
-                    <SelectValue placeholder="Select task type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Verbal">Verbal</SelectItem>
-                    <SelectItem value="Written">Written</SelectItem>
-                    <SelectItem value="Numerical">Numerical</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="assigned-to">Assign To (Optional)</Label>
-                <Select
-                  value={formData.assignedTo}
-                  onValueChange={(value) => setFormData({ ...formData, assignedTo: value })}
-                >
-                  <SelectTrigger id="assigned-to">
-                    <SelectValue placeholder="Select student (optional)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={UNASSIGNED_VALUE}>Unassigned</SelectItem>
-                    {students.map((student) => (
-                      <SelectItem key={student.id} value={student.id.toString()}>
-                        {student.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="assigned-group">Assign Group (Optional)</Label>
-                <Select
-                  value={formData.assignedGroup}
-                  onValueChange={(value) => setFormData({ ...formData, assignedGroup: value })}
-                >
-                  <SelectTrigger id="assigned-group">
-                    <SelectValue placeholder="Select group (optional)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={UNASSIGNED_VALUE}>Unassigned</SelectItem>
-                    {groups.map((group) => (
-                      <SelectItem key={group} value={group}>
-                        {group}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="task-attachment">Attachment (Optional)</Label>
-                <Input
-                  id="task-attachment"
-                  type="file"
-                  onChange={handleFileChange}
-                  accept=".doc,.docx,.pdf,.txt,.jpg,.jpeg,.png"
-                />
-                {formData.attachment && (
-                  <p className="text-sm text-muted-foreground">
-                    Selected file: {formData.attachment.name}
-                  </p>
-                )}
-              </div>
-            </div>
-            <DialogFooter>
-              <Button onClick={handleAddTask}>Add Task</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      <div className="grid gap-6 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Active Tasks</CardTitle>
-            <CardDescription>Tasks that are not yet completed</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {tasks.filter((task) => !task.completed).length > 0 ? (
-              <div className="space-y-4">
-                {tasks
-                  .filter((task) => !task.completed)
-                  .map((task) => (
-                    <div key={task.id} className="flex items-center justify-between rounded-lg border p-4">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium">{task.title}</span>
-                          <Badge className={getTaskTypeColor(task.type)}>{task.type}</Badge>
-                          {task.attachmentUrl && (
-                            <a
-                              href={task.attachmentUrl}
-                              download={task.attachmentName}
-                              className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-                            >
-                              <FileText className="h-4 w-4" />
-                              {task.attachmentName}
-                            </a>
-                          )}
-                        </div>
-                        <p className="text-sm text-muted-foreground">
-                          {task.assignedGroup ? `Group ${task.assignedGroup}` : 'No group'} •{' '}
-                          {task.assignedTo ? `Assigned to: ${getStudentName(task.assignedTo)}` : 'Unassigned'}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Button variant="ghost" size="icon" onClick={() => handleToggleCompletion(task.id)}>
-                          <CheckCircle className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => openEditDialog(task)}>
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleDeleteTask(task.id)}>
-                          <Trash className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            ) : (
-              <Alert>
-                <AlertCircle className="h-4 w-4" />
-                <AlertTitle>No active tasks</AlertTitle>
-                <AlertDescription>Add tasks using the "Add Task" button to get started.</AlertDescription>
-              </Alert>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Completed Tasks</CardTitle>
-            <CardDescription>Tasks that have been completed</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {tasks.filter((task) => task.completed).length > 0 ? (
-              <div className="space-y-4">
-                {tasks
-                  .filter((task) => task.completed)
-                  .map((task) => (
-                    <div key={task.id} className="flex items-center justify-between rounded-lg border p-4 bg-muted/50">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium line-through">{task.title}</span>
-                          <Badge className={getTaskTypeColor(task.type)}>{task.type}</Badge>
-                          {task.attachmentUrl && (
-                            <a
-                              href={task.attachmentUrl}
-                              download={task.attachmentName}
-                              className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-                            >
-                              <FileText className="h-4 w-4" />
-                              {task.attachmentName}
-                            </a>
-                          )}
-                        </div>
-                        <p className="text-sm text-muted-foreground">Completed by: {getStudentName(task.assignedTo)}</p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Button variant="ghost" size="icon" onClick={() => handleToggleCompletion(task.id)}>
-                          <CheckCircle className="h-4 w-4 text-green-500" />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleDeleteTask(task.id)}>
-                          <Trash className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-              </div>
-            ) : (
-              <Alert>
-                <AlertCircle className="h-4 w-4" />
-                <AlertTitle>No completed tasks</AlertTitle>
-                <AlertDescription>Tasks will appear here once they are marked as completed.</AlertDescription>
-              </Alert>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Edit Task Dialog */}
-      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit Task</DialogTitle>
-            <DialogDescription>Update the task details</DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="edit-task-title">Task Title</Label>
-              <Input
-                id="edit-task-title"
-                value={formData.title}
-                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                placeholder="Enter task title"
-              />
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="edit-task-description">Description</Label>
-              <Input
-                id="edit-task-description"
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                placeholder="Enter task description"
-              />
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="edit-task-type">Task Type</Label>
-              <Select
-                value={formData.type}
-                onValueChange={(value: "Verbal" | "Written" | "Numerical") => setFormData({ ...formData, type: value })}
-              >
-                <SelectTrigger id="edit-task-type">
-                  <SelectValue placeholder="Select task type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Verbal">Verbal</SelectItem>
-                  <SelectItem value="Written">Written</SelectItem>
-                  <SelectItem value="Numerical">Numerical</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="edit-assigned-to">Assign To (Optional)</Label>
-              <Select
-                value={formData.assignedTo}
-                onValueChange={(value) => setFormData({ ...formData, assignedTo: value })}
-              >
-                <SelectTrigger id="edit-assigned-to">
-                  <SelectValue placeholder="Select student (optional)" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={UNASSIGNED_VALUE}>Unassigned</SelectItem>
-                  {students.map((student) => (
-                    <SelectItem key={student.id} value={student.id.toString()}>
-                      {student.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="edit-assigned-group">Assign Group (Optional)</Label>
-              <Select
-                value={formData.assignedGroup}
-                onValueChange={(value) => setFormData({ ...formData, assignedGroup: value })}
-              >
-                <SelectTrigger id="edit-assigned-group">
-                  <SelectValue placeholder="Select group (optional)" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={UNASSIGNED_VALUE}>Unassigned</SelectItem>
-                  {groups.map((group) => (
-                    <SelectItem key={group} value={group}>
-                      {group}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="grid gap-2">
-              <Label htmlFor="edit-task-attachment">Attachment (Optional)</Label>
-              <Input
-                id="edit-task-attachment"
-                type="file"
-                onChange={handleFileChange}
-                accept=".doc,.docx,.pdf,.txt,.jpg,.jpeg,.png"
-              />
-              {formData.attachment && (
-                <p className="text-sm text-muted-foreground">
-                  Selected file: {formData.attachment.name}
-                </p>
-              )}
-              {editingTask?.attachmentName && !formData.attachment && (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Paperclip className="h-4 w-4" />
-                  <span>Current file: {editingTask.attachmentName}</span>
+        <div className="flex gap-2">
+          <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="gap-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white">
+                <Plus className="h-4 w-4" />
+                Add Task
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle>Add New Task</DialogTitle>
+                <DialogDescription>Create a new task to track</DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="title">Title</Label>
+                  <Input
+                    id="title"
+                    value={formData.title}
+                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                    placeholder="Enter task title"
+                    className="rounded-xl"
+                  />
                 </div>
-              )}
+
+                <div className="grid gap-2">
+                  <Label htmlFor="description">Description</Label>
+                  <Textarea
+                    id="description"
+                    value={formData.description}
+                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    placeholder="Enter task description"
+                    className="min-h-[80px] rounded-xl"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="status">Status</Label>
+                    <Select
+                      value={formData.status}
+                      onValueChange={(value) => setFormData({ ...formData, status: value as any })}
+                    >
+                      <SelectTrigger id="status" className="rounded-xl">
+                        <SelectValue placeholder="Select status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="pending">Pending</SelectItem>
+                        <SelectItem value="in_progress">In Progress</SelectItem>
+                        <SelectItem value="completed">Completed</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="priority">Priority</Label>
+                    <Select
+                      value={formData.priority}
+                      onValueChange={(value) => setFormData({ ...formData, priority: value as any })}
+                    >
+                      <SelectTrigger id="priority" className="rounded-xl">
+                        <SelectValue placeholder="Select priority" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="low">Low</SelectItem>
+                        <SelectItem value="medium">Medium</SelectItem>
+                        <SelectItem value="high">High</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="due-date">Due Date</Label>
+                    <Input
+                      id="due-date"
+                      type="date"
+                      value={formData.due_date}
+                      onChange={(e) => setFormData({ ...formData, due_date: e.target.value })}
+                      className="rounded-xl"
+                    />
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="assigned-to">Assigned To (User ID)</Label>
+                    <Input
+                      id="assigned-to"
+                      value={formData.assigned_to}
+                      onChange={(e) => setFormData({ ...formData, assigned_to: e.target.value })}
+                      placeholder="Enter user ID"
+                      className="rounded-xl"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="tags">Tags (comma-separated)</Label>
+                  <Input
+                    id="tags"
+                    value={formData.tags.join(", ")}
+                    onChange={(e) => handleTagsChange(e.target.value)}
+                    placeholder="Enter tags, separated by commas"
+                    className="rounded-xl"
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
+                  Cancel
+                </Button>
+                <Button onClick={handleAddTask}>Add Task</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </div>
+
+      <Card className="overflow-hidden rounded-2xl bg-gradient-to-br from-white to-gray-50 shadow-xl dark:from-gray-800 dark:to-gray-900">
+        <CardHeader className="border-b dark:border-gray-700">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Task List</CardTitle>
+              <CardDescription>View and manage your tasks</CardDescription>
+            </div>
+            <div className="flex gap-4">
+              <div className="flex items-center gap-2">
+                <Search className="h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search tasks..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-[200px] rounded-xl"
+                />
+              </div>
+              <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+                <SelectTrigger className="w-[150px] rounded-xl">
+                  <SelectValue placeholder="Filter by status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="in_progress">In Progress</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={selectedPriority} onValueChange={setSelectedPriority}>
+                <SelectTrigger className="w-[150px] rounded-xl">
+                  <SelectValue placeholder="Filter by priority" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Priorities</SelectItem>
+                  <SelectItem value="low">Low</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={selectedTag} onValueChange={setSelectedTag}>
+                <SelectTrigger className="w-[150px] rounded-xl">
+                  <SelectValue placeholder="Filter by tag" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Tags</SelectItem>
+                  {tags.map((tag) => (
+                    <SelectItem key={tag.name} value={tag.name}>
+                      {tag.name} ({tag.count})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                variant="outline"
+                onClick={() => setShowCompleted(!showCompleted)}
+                className="gap-2"
+              >
+                <CheckCircle2 className="h-4 w-4" />
+                {showCompleted ? "Hide Completed" : "Show Completed"}
+              </Button>
             </div>
           </div>
-          <DialogFooter>
-            <Button onClick={handleEditTask}>Save Changes</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Title</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Priority</TableHead>
+                <TableHead>Due Date</TableHead>
+                <TableHead>Assigned To</TableHead>
+                <TableHead>Tags</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredTasks.map((task) => (
+                <TableRow key={task.id}>
+                  <TableCell className="max-w-[300px] truncate font-medium">
+                    {task.title}
+                    {task.description && (
+                      <p className="truncate text-sm text-muted-foreground">{task.description}</p>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <Badge className={`${getStatusColor(task.status)} text-white`}>
+                      {task.status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Badge className={`${getPriorityColor(task.priority)} text-white`}>
+                      {task.priority}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    {task.due_date ? (
+                      <div className="flex items-center gap-1">
+                        <Calendar className="h-4 w-4" />
+                        {format(new Date(task.due_date), "MMM d, yyyy")}
+                      </div>
+                    ) : (
+                      "-"
+                    )}
+                  </TableCell>
+                  <TableCell>{task.assigned_to || "-"}</TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap gap-1">
+                      {task.tags?.map((tag) => (
+                        <Badge key={tag} variant="outline" className="text-xs">
+                          {tag}
+                        </Badge>
+                      ))}
+                    </div>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-2">
+                      {task.status !== "completed" && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleCompleteTask(task)}
+                        >
+                          <CheckCircle2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => openEditDialog(task)}
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDeleteTask(task.id)}
+                      >
+                        <Trash className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
     </div>
   )
 }

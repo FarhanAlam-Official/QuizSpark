@@ -7,11 +7,10 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { signInWithLocalDb } from "@/lib/auth/localAuth";
 import { validateEmail } from "@/lib/utils/validation";
 import { Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/lib/context/AuthContext";
-import { authNotifications, formNotifications } from "@/lib/utils/notifications";
+import { authNotifications } from "@/lib/utils/notifications";
 
 export default function LoginForm() {
   const [isLoading, setIsLoading] = useState(false);
@@ -32,99 +31,67 @@ export default function LoginForm() {
     setError(null);
   };
 
-  async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
     setIsLoading(true);
     setError(null);
 
     try {
-      console.log('🔄 Starting login submission...');
-      const { email, password } = formData;
-
       // Validate email
-      const emailValidation = validateEmail(email);
+      const emailValidation = validateEmail(formData.email);
       if (!emailValidation.isValid) {
-        formNotifications.invalidEmail();
         throw new Error(emailValidation.error);
       }
 
-      if (!password) {
-        formNotifications.requiredField('Password');
-        throw new Error("Password is required");
-      }
+      // Sign in with Supabase
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: formData.email,
+        password: formData.password,
+      });
 
-      let result;
-      
-      if (process.env.NODE_ENV === 'development') {
-        console.log('🔑 Attempting local database login...');
-        result = await signInWithLocalDb(email, password);
-        console.log('📋 Local login result:', { 
-          success: !!result.data,
-          hasError: !!result.error,
-          userData: result.data?.user 
-        });
-      } else {
-        console.log('🔐 Attempting Supabase login...');
-        result = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-      }
+      if (error) throw error;
+      if (!data.user) throw new Error('No user data returned');
 
-      if (result.error) {
-        console.error('❌ Login error:', result.error);
-        // Handle specific error cases
-        if (result.error.message.includes('Invalid email or password')) {
-          authNotifications.invalidCredentials();
-        } else if (result.error.message.includes('Email not confirmed') || 
-                  result.error.message.includes('verify your email')) {
-          authNotifications.emailNotVerified();
-        } else {
-          authNotifications.loginError(result.error.message);
-        }
-        throw new Error(result.error.message);
-      }
+      // Get user metadata
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', data.user.id)
+        .single();
 
-      if (!result.data?.user) {
-        throw new Error('No user data received');
-      }
+      if (userError) throw userError;
 
-      // Store authentication state
-      login(result.data.user);
+      // Login successful
+      login({
+        id: data.user.id,
+        email: data.user.email!,
+        role: userData.role || 'user',
+      });
 
-      console.log('✅ Login successful, redirecting...');
       authNotifications.loginSuccess();
-      
-      // Use window.location for a full page reload to trigger middleware
-      window.location.href = '/dashboard';
+      router.push('/dashboard');
     } catch (error: any) {
-      console.error('❌ Form submission error:', error);
+      console.error('Login error:', error);
       setError(error.message);
+      authNotifications.loginError(error.message);
     } finally {
       setIsLoading(false);
     }
-  }
+  };
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4">
-      {error && (
-        <div className="p-3 text-sm text-red-500 bg-red-50 rounded-md">
-          {error}
-        </div>
-      )}
+    <form onSubmit={handleSubmit} className="space-y-4">
       <div className="space-y-2">
         <Label htmlFor="email">Email</Label>
         <Input
           id="email"
           name="email"
           type="email"
+          placeholder="Enter your email"
           value={formData.email}
           onChange={handleInputChange}
-          placeholder="name@example.com"
-          required
           disabled={isLoading}
-          autoComplete="email"
-          className="w-full"
+          required
         />
       </div>
       <div className="space-y-2">
@@ -134,36 +101,48 @@ export default function LoginForm() {
             id="password"
             name="password"
             type={showPassword ? "text" : "password"}
+            placeholder="Enter your password"
             value={formData.password}
             onChange={handleInputChange}
-            required
             disabled={isLoading}
-            autoComplete="current-password"
-            className="w-full pr-10"
+            required
           />
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon"
+            className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
             onClick={() => setShowPassword(!showPassword)}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
           >
-            {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-          </button>
+            {showPassword ? (
+              <EyeOff className="h-4 w-4 text-gray-400" />
+            ) : (
+              <Eye className="h-4 w-4 text-gray-400" />
+            )}
+          </Button>
         </div>
       </div>
-      <Button className="w-full" type="submit" disabled={isLoading}>
+
+      {error && (
+        <div className="text-sm text-red-500">
+          {error}
+        </div>
+      )}
+
+      <Button
+        type="submit"
+        className="w-full"
+        disabled={isLoading}
+      >
         {isLoading ? "Signing in..." : "Sign in"}
       </Button>
-      <div className="text-center text-sm">
-        <Link href="/auth/register" className="text-primary hover:underline">
-          Don&apos;t have an account? Sign up
-        </Link>
-      </div>
+
       <div className="text-center text-sm">
         <Link
-          href="/auth/forgot-password"
-          className="text-muted-foreground hover:underline"
+          href="/auth/register"
+          className="text-primary hover:underline"
         >
-          Forgot your password?
+          Don't have an account? Sign up
         </Link>
       </div>
     </form>

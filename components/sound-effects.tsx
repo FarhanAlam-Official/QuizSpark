@@ -1,128 +1,111 @@
 "use client"
 
 import type React from "react"
-
-import { createContext, useContext, useEffect, useRef } from "react"
+import { createContext, useContext, useEffect, useRef, useState } from "react"
 
 type SoundType = "correct" | "incorrect" | "select" | "complete" | "click" | "tick" | "fail"
 
 interface SoundContextType {
   playSound: (sound: SoundType) => void
+  isSoundLoaded: boolean
 }
 
 const SoundContext = createContext<SoundContextType | undefined>(undefined)
 
+const SOUND_PATHS = {
+  correct: "/sounds/correct.mp3",
+  incorrect: "/sounds/incorrect.mp3",
+  select: "/sounds/select.mp3",
+  complete: "/sounds/complete.mp3",
+  click: "/sounds/click.mp3",
+  tick: "/sounds/tick.mp3",
+  fail: "/sounds/fail.mp3"
+}
+
 export function SoundProvider({ children }: { children: React.ReactNode }) {
-  const correctSoundRef = useRef<HTMLAudioElement | null>(null)
-  const incorrectSoundRef = useRef<HTMLAudioElement | null>(null)
-  const selectSoundRef = useRef<HTMLAudioElement | null>(null)
-  const completeSoundRef = useRef<HTMLAudioElement | null>(null)
-  const clickSoundRef = useRef<HTMLAudioElement | null>(null)
-  const tickSoundRef = useRef<HTMLAudioElement | null>(null)
-  const failSoundRef = useRef<HTMLAudioElement | null>(null)
+  const audioRefs = useRef<Record<SoundType, HTMLAudioElement | null>>({
+    correct: null,
+    incorrect: null,
+    select: null,
+    complete: null,
+    click: null,
+    tick: null,
+    fail: null
+  })
+  const [isSoundLoaded, setIsSoundLoaded] = useState(false)
+  const [loadedSounds, setLoadedSounds] = useState<Set<SoundType>>(new Set())
 
   useEffect(() => {
-    // Create audio elements
-    correctSoundRef.current = new Audio()
-    incorrectSoundRef.current = new Audio()
-    selectSoundRef.current = new Audio()
-    completeSoundRef.current = new Audio()
-    clickSoundRef.current = new Audio()
-    tickSoundRef.current = new Audio()
-    failSoundRef.current = new Audio()
+    let mounted = true
+    const soundsToLoad = new Set<SoundType>()
 
-    // Set sources
-    if (correctSoundRef.current) correctSoundRef.current.src = "/sounds/correct.mp3"
-    if (incorrectSoundRef.current) incorrectSoundRef.current.src = "/sounds/incorrect.mp3"
-    if (selectSoundRef.current) selectSoundRef.current.src = "/sounds/select.mp3"
-    if (completeSoundRef.current) completeSoundRef.current.src = "/sounds/complete.mp3"
-    if (clickSoundRef.current) clickSoundRef.current.src = "/sounds/click.mp3"
-    if (tickSoundRef.current) tickSoundRef.current.src = "/sounds/tick.mp3"
-    if (failSoundRef.current) failSoundRef.current.src = "/sounds/fail.mp3"
+    // Create and load audio elements
+    Object.entries(SOUND_PATHS).forEach(([key, path]) => {
+      const soundType = key as SoundType
+      const audio = new Audio()
+      
+      audio.addEventListener('canplaythrough', () => {
+        if (mounted) {
+          soundsToLoad.add(soundType)
+          if (soundsToLoad.size === Object.keys(SOUND_PATHS).length) {
+            setIsSoundLoaded(true)
+          }
+          setLoadedSounds(new Set(soundsToLoad))
+        }
+      })
 
-    // Preload audio files
-    const preloadAudio = (audio: HTMLAudioElement | null) => {
-      if (audio) {
-        audio.load()
-      }
-    }
+      audio.addEventListener('error', (e) => {
+        console.warn(`Error loading sound ${key}:`, e)
+        // Still mark as loaded to avoid blocking
+        soundsToLoad.add(soundType)
+        if (soundsToLoad.size === Object.keys(SOUND_PATHS).length) {
+          setIsSoundLoaded(true)
+        }
+        setLoadedSounds(new Set(soundsToLoad))
+      })
 
-    preloadAudio(correctSoundRef.current)
-    preloadAudio(incorrectSoundRef.current)
-    preloadAudio(selectSoundRef.current)
-    preloadAudio(completeSoundRef.current)
-    preloadAudio(clickSoundRef.current)
-    preloadAudio(tickSoundRef.current)
-    preloadAudio(failSoundRef.current)
+      audio.src = path
+      audio.load()
+      audioRefs.current[soundType] = audio
+    })
 
     return () => {
-      // Clean up audio elements
-      correctSoundRef.current = null
-      incorrectSoundRef.current = null
-      selectSoundRef.current = null
-      completeSoundRef.current = null
-      clickSoundRef.current = null
-      tickSoundRef.current = null
-      failSoundRef.current = null
+      mounted = false
+      // Cleanup audio elements
+      Object.values(audioRefs.current).forEach(audio => {
+        if (audio) {
+          audio.pause()
+          audio.src = ''
+        }
+      })
+      audioRefs.current = {
+        correct: null,
+        incorrect: null,
+        select: null,
+        complete: null,
+        click: null,
+        tick: null,
+        fail: null
+      }
     }
   }, [])
 
   const playSound = (sound: SoundType) => {
-    let audioRef: React.RefObject<HTMLAudioElement | null>
-
-    switch (sound) {
-      case "correct":
-        audioRef = correctSoundRef
-        break
-      case "incorrect":
-        audioRef = incorrectSoundRef
-        break
-      case "select":
-        audioRef = selectSoundRef
-        break
-      case "complete":
-        audioRef = completeSoundRef
-        break
-      case "click":
-        audioRef = clickSoundRef
-        break
-      case "tick":
-        audioRef = tickSoundRef
-        break
-      case "fail":
-        audioRef = failSoundRef
-        break
-      default:
-        return
-    }
-
-    if (audioRef.current) {
-      // Check if the audio file is loaded and ready
-      if (audioRef.current.readyState >= 2) {
-        audioRef.current.currentTime = 0
-        audioRef.current.play().catch((e) => {
-          console.error(`Error playing ${sound} sound:`, e)
-        })
-      } else {
-        // If not ready, set up event listener to play when loaded
-        const handleCanPlay = () => {
-          if (audioRef.current) {
-            audioRef.current.currentTime = 0
-            audioRef.current.play().catch((e) => {
-              console.error(`Error playing ${sound} sound:`, e)
-            })
-            audioRef.current.removeEventListener("canplaythrough", handleCanPlay)
-          }
-        }
-
-        audioRef.current.addEventListener("canplaythrough", handleCanPlay)
-        // Trigger load in case it hasn't started loading yet
-        audioRef.current.load()
-      }
+    const audio = audioRefs.current[sound]
+    if (audio && loadedSounds.has(sound)) {
+      // Reset and play
+      audio.currentTime = 0
+      audio.play().catch(error => {
+        console.warn(`Error playing sound ${sound}:`, error)
+      })
     }
   }
 
-  return <SoundContext.Provider value={{ playSound }}>{children}</SoundContext.Provider>
+  return (
+    <SoundContext.Provider value={{ playSound, isSoundLoaded }}>
+      {children}
+    </SoundContext.Provider>
+  )
 }
 
 export function useSound() {

@@ -7,7 +7,6 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { registerWithLocalDb } from "@/lib/auth/localAuth";
 import { validateEmail, validatePassword, validateUsername } from "@/lib/utils/validation";
 import { PasswordStrengthIndicator } from "./PasswordStrengthIndicator";
 import { OTPVerification } from "./OTPVerification";
@@ -38,8 +37,10 @@ export default function RegisterForm() {
   };
 
   const handleSupabaseSignUp = async (email: string, password: string, username: string) => {
+    if (!supabase) throw new Error('Supabase client not initialized');
+
     const baseUrl = window.location.origin;
-    const redirectUrl = `${baseUrl}/auth/callback?type=signup`;
+    const redirectUrl = `${baseUrl}/auth/callback`;
 
     const result = await supabase.auth.signUp({
       email,
@@ -47,7 +48,8 @@ export default function RegisterForm() {
       options: {
         emailRedirectTo: redirectUrl,
         data: {
-          username,
+          name: username,
+          role: 'user',
           registered_at: new Date().toISOString(),
         }
       },
@@ -111,12 +113,18 @@ export default function RegisterForm() {
         throw new Error("Passwords do not match");
       }
 
-      // Production: Use Supabase with enhanced handling
+      // Sign up the user
       const result = await handleSupabaseSignUp(email, password, username);
       
-      // If successful, show verification page
-      authNotifications.emailVerificationSent();
-      router.push(`/auth/check-email?email=${encodeURIComponent(email)}&type=signup`);
+      if (result.data?.user) {
+        // Show verification notification
+        authNotifications.emailVerificationSent();
+        
+        // Use router.replace instead of push to avoid the redirect loop
+        router.replace(`/auth/check-email?email=${encodeURIComponent(email)}&type=signup`);
+      } else {
+        throw new Error('Registration failed');
+      }
     } catch (error: any) {
       setError(error.message);
       console.error('Registration error:', error);
