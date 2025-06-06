@@ -1,39 +1,46 @@
-import { NextResponse } from 'next/server'
-import type { NextRequest } from 'next/server'
+import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs';
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
 
-export function middleware(request: NextRequest) {
-  // Get the pathname of the request
-  const path = request.nextUrl.pathname
+export async function middleware(request: NextRequest) {
+  const response = NextResponse.next();
+  const supabase = createMiddlewareClient({ req: request, res: response });
 
-  // Define public paths that don't require authentication
-  const isPublicPath = path.startsWith('/auth/') || path === '/'
+  // Refresh session if expired - required for Server Components
+  await supabase.auth.getSession();
 
-  // Check if user is authenticated
-  const isAuthenticated = request.cookies.has('auth')
+  const pathname = request.nextUrl.pathname;
 
-  // Redirect authenticated users trying to access auth pages
-  if (isAuthenticated && isPublicPath) {
-    return NextResponse.redirect(new URL('/dashboard', request.url))
+  // Handle auth pages
+  if (pathname.startsWith('/auth/')) {
+    const { data: { session } } = await supabase.auth.getSession();
+
+    // Special handling for verification pages
+    if (pathname === '/auth/check-email' || 
+        pathname === '/auth/verification-success' || 
+        pathname === '/auth/verification-error') {
+      return response;
+    }
+
+    // If user is signed in and tries to access auth pages, redirect to dashboard
+    if (session && !pathname.includes('signout')) {
+      return NextResponse.redirect(new URL('/dashboard', request.url));
+    }
   }
 
-  // Redirect unauthenticated users trying to access protected pages
-  if (!isAuthenticated && !isPublicPath) {
-    return NextResponse.redirect(new URL('/auth/login', request.url))
-  }
-
-  return NextResponse.next()
+  return response;
 }
 
-// Configure the middleware to run on specific paths
 export const config = {
   matcher: [
     /*
      * Match all request paths except for the ones starting with:
-     * - api (API routes)
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
+     * - public (public files)
+     * - api (API routes)
      */
-    '/((?!api|_next/static|_next/image|favicon.ico).*)',
+    '/((?!_next/static|_next/image|favicon.ico|public|api).*)',
   ],
-} 
+}; 

@@ -4,16 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "dev:local": "concurrently \"npm run dev\" \"npm run server\"",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "migrate": "ts-node -P scripts/tsconfig.json scripts/migrate-to-supabase.ts",
-    "sync": "ts-node -P scripts/tsconfig.json scripts/sync-with-supabase.ts",
-    "server": "json-server --watch db.json --port 4000",
-    "migrate:json": "ts-node -P scripts/tsconfig.json scripts/migrate-data.ts",
-    "migrate:supabase": "ts-node -P scripts/tsconfig.json scripts/update-schema.ts",
-    "migrate:users": "ts-node -P scripts/tsconfig.json scripts/migrate-users.ts"
+    "db:schema": "ts-node -P scripts/tsconfig.json scripts/apply-schema.ts",
+    "db:reset": "ts-node -P scripts/tsconfig.json scripts/reset-db.ts"
   },
   "dependencies": {
     "@emotion/is-prop-valid": "latest",
@@ -64,7 +59,6 @@
     "framer-motion": "^12.12.1",
     "input-otp": "1.4.1",
     "js-cookie": "^3.0.5",
-    "json-server": "^1.0.0-beta.3",
     "lucide-react": "^0.454.0",
     "next": "14.1.0",
     "next-themes": "latest",
@@ -89,7 +83,6 @@
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "autoprefixer": "^10.0.1",
-    "concurrently": "^9.1.2",
     "dotenv": "^16.5.0",
     "postcss": "^8",
     "tailwindcss": "^3.3.0",
