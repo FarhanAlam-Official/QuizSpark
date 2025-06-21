@@ -100,3 +100,4 @@ db.backup.*.json
 # Misc
 *.pem
 .DS_Store*
+.env
