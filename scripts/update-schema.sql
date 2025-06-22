@@ -58,24 +58,25 @@ ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
 
 -- Create policies for students table
 CREATE POLICY "Users can view their own students"
-ON students FOR SELECT
-TO authenticated
+ON public.students FOR SELECT
 USING (auth.uid() = user_id);
 
 CREATE POLICY "Users can insert their own students"
-ON students FOR INSERT
-TO authenticated
+ON public.students FOR INSERT
 WITH CHECK (auth.uid() = user_id);
 
 CREATE POLICY "Users can update their own students"
-ON students FOR UPDATE
-TO authenticated
-USING (auth.uid() = user_id);
+ON public.students FOR UPDATE
+USING (auth.uid() = user_id)
+WITH CHECK (auth.uid() = user_id);
 
 CREATE POLICY "Users can delete their own students"
-ON students FOR DELETE
-TO authenticated
+ON public.students FOR DELETE
 USING (auth.uid() = user_id);
+
+-- Grant necessary permissions
+GRANT ALL ON public.students TO authenticated;
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO authenticated;
 
 -- Create policies for questions table
 CREATE POLICY "Users can view their own questions"
