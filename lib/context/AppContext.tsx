@@ -14,8 +14,8 @@ interface AppContextType {
   addQuestion: (question: Omit<Question, "id" | "created_at" | "updated_at">) => Promise<void>;
   updateQuestion: (id: string, question: Partial<Question>) => Promise<void>;
   deleteQuestion: (id: string) => Promise<void>;
-  addStudent: (student: Omit<Student, "id" | "created_at" | "updated_at">) => Promise<void>;
-  updateStudent: (id: string, student: Partial<Student>) => Promise<void>;
+  addStudent: (student: Omit<Student, "id" | "created_at" | "updated_at" | "user_id" | "created_by" | "updated_by">) => Promise<void>;
+  updateStudent: (id: string, student: Partial<Omit<Student, "id" | "user_id" | "created_by" | "updated_by">>) => Promise<void>;
   deleteStudent: (id: string) => Promise<void>;
   addTask: (task: Omit<Task, "id" | "created_at" | "updated_at">) => Promise<void>;
   updateTask: (id: string, task: Partial<Task>) => Promise<void>;
@@ -124,38 +124,79 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const addStudent = async (student: Omit<Student, "id" | "created_at" | "updated_at">) => {
-    if (!user || !supabase) return;
+  const addStudent = async (student: Omit<Student, "id" | "created_at" | "updated_at" | "user_id" | "created_by" | "updated_by">) => {
+    if (!user || !supabase) {
+      throw new Error("Authentication required");
+    }
 
     try {
       const { data, error } = await supabase
         .from("students")
-        .insert({ ...student, user_id: user.id })
+        .insert({
+          ...student,
+          user_id: user.id,
+          created_by: user.id,
+          updated_by: user.id,
+          last_active_at: new Date().toISOString(),
+          metadata: {
+            ...student.metadata,
+            added_via: student.metadata?.added_via || "manual",
+            created_at: new Date().toISOString()
+          }
+        })
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error("Database error:", error);
+        throw new Error(error.message);
+      }
+
+      if (!data) {
+        throw new Error("Failed to create student");
+      }
+
       setStudents((prev) => [...prev, data]);
+      return data;
     } catch (error) {
       console.error("Error adding student:", error);
       throw error;
     }
   };
 
-  const updateStudent = async (id: string, student: Partial<Student>) => {
-    if (!user || !supabase) return;
+  const updateStudent = async (id: string, student: Partial<Omit<Student, "id" | "user_id" | "created_by" | "updated_by">>) => {
+    if (!user || !supabase) {
+      throw new Error("Authentication required");
+    }
 
     try {
       const { data, error } = await supabase
         .from("students")
-        .update(student)
+        .update({
+          ...student,
+          updated_by: user.id,
+          metadata: {
+            ...student.metadata,
+            last_updated_at: new Date().toISOString(),
+            update_count: ((student.metadata?.update_count || 0) + 1)
+          }
+        })
         .eq("id", id)
         .eq("user_id", user.id)
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error("Database error:", error);
+        throw new Error(error.message);
+      }
+
+      if (!data) {
+        throw new Error("Student not found");
+      }
+
       setStudents((prev) => prev.map((s) => (s.id === id ? data : s)));
+      return data;
     } catch (error) {
       console.error("Error updating student:", error);
       throw error;
@@ -163,7 +204,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const deleteStudent = async (id: string) => {
-    if (!user || !supabase) return;
+    if (!user || !supabase) {
+      throw new Error("Authentication required");
+    }
 
     try {
       const { error } = await supabase
@@ -172,7 +215,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         .eq("id", id)
         .eq("user_id", user.id);
 
-      if (error) throw error;
+      if (error) {
+        console.error("Database error:", error);
+        throw new Error(error.message);
+      }
+
       setStudents((prev) => prev.filter((s) => s.id !== id));
     } catch (error) {
       console.error("Error deleting student:", error);

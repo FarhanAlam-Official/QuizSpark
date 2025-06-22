@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
+import type { AuthChangeEvent, Session, SupabaseClient } from "@supabase/supabase-js";
 import type { User, UserRole } from "@/lib/supabase";
 
 interface AuthContextType {
@@ -24,70 +24,68 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
-  const supabase = createClient();
+  const [supabase, setSupabase] = useState<SupabaseClient | null>(null);
+
+  // Initialize Supabase client
+  useEffect(() => {
+    const client = createClient();
+    setSupabase(client);
+  }, []);
 
   useEffect(() => {
+    let mounted = true;
+
     // Initialize with initial session if available
     const initializeUser = async () => {
       try {
-        if (initialSession?.user && supabase) {
-          // Get user metadata from users table
+        if (!supabase) {
+          if (mounted) setIsLoading(false);
+          return;
+        }
+
+        // First try to get user from initial session
+        if (initialSession?.user) {
           const { data: userData, error: userError } = await supabase
             .from('users')
             .select('*')
             .eq('id', initialSession.user.id)
             .single();
 
-          if (userError) throw userError;
-          setUser(userData as User);
+          if (!userError && userData && mounted) {
+            setUser(userData as User);
+          }
+        } else {
+          // If no initial session, check current session
+          const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+          
+          if (!sessionError && session?.user && mounted) {
+            const { data: userData, error: userError } = await supabase
+              .from('users')
+              .select('*')
+              .eq('id', session.user.id)
+              .single();
+
+            if (!userError && userData && mounted) {
+              setUser(userData as User);
+            }
+          }
         }
       } catch (error) {
         console.error('Error initializing user:', error);
-        setUser(null);
+        if (mounted) setUser(null);
       } finally {
-        setIsLoading(false);
+        if (mounted) setIsLoading(false);
       }
     };
 
-    initializeUser();
-  }, [initialSession, supabase]);
-
-  useEffect(() => {
-    const setupAuthListener = async () => {
-      if (!supabase) {
-        setIsLoading(false);
-        return;
-      }
-
-      // Check current session first
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      
-      if (sessionError) {
-        console.error('Error getting session:', sessionError);
-        setUser(null);
-        setIsLoading(false);
-        return;
-      }
-
-      if (session?.user) {
-        try {
-          const { data: userData, error: userError } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', session.user.id)
-            .single();
-
-          if (userError) throw userError;
-          setUser(userData as User);
-        } catch (error) {
-          console.error('Error getting user data:', error);
-          setUser(null);
-        }
-      }
+    if (supabase) {
+      initializeUser();
 
       // Subscribe to auth state changes
       const { data: { subscription } } = supabase.auth.onAuthStateChange(
         async (event: AuthChangeEvent, session: Session | null) => {
+          if (!mounted || !supabase) return;
+
           if (event === 'SIGNED_OUT') {
             setUser(null);
             router.push('/auth/login');
@@ -99,24 +97,28 @@ export function AuthProvider({ children, initialSession }: AuthProviderProps) {
                 .eq('id', session.user.id)
                 .single();
 
-              if (userError) throw userError;
-              setUser(userData as User);
+              if (!userError && userData && mounted) {
+                setUser(userData as User);
+              }
             } catch (error) {
               console.error('Error getting user data:', error);
-              setUser(null);
+              if (mounted) setUser(null);
             }
           }
-          setIsLoading(false);
+          if (mounted) setIsLoading(false);
         }
       );
 
       return () => {
+        mounted = false;
         subscription.unsubscribe();
       };
-    };
+    }
 
-    setupAuthListener();
-  }, [router, supabase]);
+    return () => {
+      mounted = false;
+    };
+  }, [initialSession, router, supabase]);
 
   const login = (userData: User) => {
     setUser(userData);

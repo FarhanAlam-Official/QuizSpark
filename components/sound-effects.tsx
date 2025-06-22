@@ -3,7 +3,7 @@
 import type React from "react"
 import { createContext, useContext, useEffect, useRef, useState } from "react"
 
-type SoundType = "correct" | "incorrect" | "select" | "complete" | "click" | "tick" | "fail"
+type SoundType = "correct" | "incorrect" | "select" | "complete" | "click" | "tick" | "fail" | "error" | "success"
 
 interface SoundContextType {
   playSound: (sound: SoundType) => void
@@ -19,7 +19,9 @@ const SOUND_PATHS = {
   complete: "/sounds/complete.mp3",
   click: "/sounds/click.mp3",
   tick: "/sounds/tick.mp3",
-  fail: "/sounds/fail.mp3"
+  fail: "/sounds/fail.mp3",
+  error: "/sounds/error.mp3",
+  success: "/sounds/success.mp3"
 }
 
 export function SoundProvider({ children }: { children: React.ReactNode }) {
@@ -30,7 +32,9 @@ export function SoundProvider({ children }: { children: React.ReactNode }) {
     complete: null,
     click: null,
     tick: null,
-    fail: null
+    fail: null,
+    error: null,
+    success: null
   })
   const [isSoundLoaded, setIsSoundLoaded] = useState(false)
   const [loadedSounds, setLoadedSounds] = useState<Set<SoundType>>(new Set())
@@ -44,7 +48,10 @@ export function SoundProvider({ children }: { children: React.ReactNode }) {
       const soundType = key as SoundType
       const audio = new Audio()
       
-      audio.addEventListener('canplaythrough', () => {
+      // Add error handling and logging
+      audio.addEventListener('error', (e) => {
+        console.error(`Error loading sound ${key} from path ${path}:`, e.target)
+        // Still mark as loaded to avoid blocking
         if (mounted) {
           soundsToLoad.add(soundType)
           if (soundsToLoad.size === Object.keys(SOUND_PATHS).length) {
@@ -54,19 +61,29 @@ export function SoundProvider({ children }: { children: React.ReactNode }) {
         }
       })
 
-      audio.addEventListener('error', (e) => {
-        console.warn(`Error loading sound ${key}:`, e)
-        // Still mark as loaded to avoid blocking
-        soundsToLoad.add(soundType)
-        if (soundsToLoad.size === Object.keys(SOUND_PATHS).length) {
-          setIsSoundLoaded(true)
+      audio.addEventListener('canplaythrough', () => {
+        console.log(`Sound ${key} loaded successfully`)
+        if (mounted) {
+          soundsToLoad.add(soundType)
+          if (soundsToLoad.size === Object.keys(SOUND_PATHS).length) {
+            setIsSoundLoaded(true)
+          }
+          setLoadedSounds(new Set(soundsToLoad))
         }
-        setLoadedSounds(new Set(soundsToLoad))
       })
 
+      // Set audio properties
+      audio.preload = 'auto'
+      audio.volume = 0.5
       audio.src = path
-      audio.load()
-      audioRefs.current[soundType] = audio
+      
+      // Start loading
+      try {
+        audio.load()
+        audioRefs.current[soundType] = audio
+      } catch (error) {
+        console.error(`Failed to load sound ${key}:`, error)
+      }
     })
 
     return () => {
@@ -78,15 +95,6 @@ export function SoundProvider({ children }: { children: React.ReactNode }) {
           audio.src = ''
         }
       })
-      audioRefs.current = {
-        correct: null,
-        incorrect: null,
-        select: null,
-        complete: null,
-        click: null,
-        tick: null,
-        fail: null
-      }
     }
   }, [])
 
@@ -96,8 +104,10 @@ export function SoundProvider({ children }: { children: React.ReactNode }) {
       // Reset and play
       audio.currentTime = 0
       audio.play().catch(error => {
-        console.warn(`Error playing sound ${sound}:`, error)
+        console.error(`Error playing sound ${sound}:`, error)
       })
+    } else {
+      console.warn(`Sound ${sound} not loaded yet`)
     }
   }
 
