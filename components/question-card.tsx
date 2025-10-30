@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Clock, CheckCircle, XCircle, UserPlus, Users } from "lucide-react"
 import { Dialog, DialogContent } from "@/components/ui/dialog"
-import { VisualStudentPicker } from "@/components/visual-student-picker"
+import { StudentPicker } from "@/components/student-picker"
 import { useSound } from "@/components/sound-effects"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 
@@ -547,9 +547,9 @@ export function QuestionCard({
 
       <Dialog open={showStudentPicker} onOpenChange={setShowStudentPicker}>
         <DialogContent className="sm:max-w-md">
-          <VisualStudentPicker
+          <StudentPicker
             students={students}
-            excludeIds={pickedStudentIds}
+            excludeIds={pickedStudentIds.map(String)}
             onStudentPicked={handleStudentPicked}
             onClose={() => setShowStudentPicker(false)}
           />
