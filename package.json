@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "next lint",
     "db:schema": "ts-node -P scripts/tsconfig.json scripts/apply-schema.ts",
-    "db:reset": "ts-node -P scripts/tsconfig.json scripts/reset-db.ts"
+    "db:reset": "ts-node -P scripts/tsconfig.json scripts/reset-db.ts",
+    "check-setup": "node scripts/check-setup.js",
+    "setup": "node scripts/check-setup.js && echo '\n✅ Setup verified! Run: npm run dev'"
   },
   "dependencies": {
     "@emotion/is-prop-valid": "latest",
