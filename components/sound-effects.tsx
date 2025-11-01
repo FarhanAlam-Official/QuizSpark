@@ -99,15 +99,22 @@ export function SoundProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const playSound = (sound: SoundType) => {
+    console.log(`Attempting to play sound: ${sound}`)
     const audio = audioRefs.current[sound]
     if (audio && loadedSounds.has(sound)) {
       // Reset and play
       audio.currentTime = 0
       audio.play().catch(error => {
         console.error(`Error playing sound ${sound}:`, error)
+        // Try to provide more context about the error
+        if (error.name === 'NotAllowedError') {
+          console.error('Sound playback was blocked by browser autoplay policy. User interaction is required.')
+        } else if (error.name === 'NotSupportedError') {
+          console.error('Audio format not supported by the browser.')
+        }
       })
     } else {
-      console.warn(`Sound ${sound} not loaded yet`)
+      console.warn(`Sound ${sound} not loaded yet. Audio ref exists: ${!!audio}, Sound loaded: ${loadedSounds.has(sound)}`)
     }
   }
 

@@ -44,6 +44,11 @@ const navigation = [
     name: "Quiz",
     href: "/quiz",
     icon: Trophy
+  },
+  {
+    name: "Leaderboard",
+    href: "/leaderboard",
+    icon: Trophy
   }
 ]
 

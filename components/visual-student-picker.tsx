@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import confetti from "canvas-confetti"
-import type { Student } from "@/lib/api"
+import type { Student } from "@/lib/supabase"
 import { Button } from "@/components/ui/button"
 import { Shuffle, UserCheck, Users } from "lucide-react"
 import { useSound } from "@/components/sound-effects"
@@ -36,7 +36,7 @@ export function VisualStudentPicker({ students, excludeIds = [], onStudentPicked
 
   // Initialize available students
   useEffect(() => {
-    const filtered = students.filter((student) => !excludeIds.includes(student.id))
+    const filtered = students.filter((student) => !excludeIds.includes(Number(student.id)))
     setAvailableStudents(filtered)
     setDisplayedStudents(getRandomStudents(filtered, 8))
   }, [students, excludeIds, getRandomStudents])
@@ -54,8 +54,8 @@ export function VisualStudentPicker({ students, excludeIds = [], onStudentPicked
     if (isSelecting && availableStudents.length > 0) {
       cleanup()
       let startTime = Date.now()
-      const duration = 3500 // Slightly longer duration
-      const interval = 150
+      const duration = 5000 // Longer duration for better visibility
+      const interval = 100 // Faster updates for smoother animation
 
       const updateSlot = () => {
         const elapsed = Date.now() - startTime
@@ -211,7 +211,7 @@ export function VisualStudentPicker({ students, excludeIds = [], onStudentPicked
                   }}
                 >
                   <div className="font-bold text-lg truncate">{student.name}</div>
-                  <div className="text-sm opacity-75">Group {student.group}</div>
+                  <div className="text-sm opacity-75">Group {student.group_name || 'N/A'}</div>
                 </motion.div>
               ))}
             </AnimatePresence>

@@ -27,38 +27,121 @@ import { Badge } from "@/components/ui/badge"
 import { motion } from "framer-motion"
 import { BulkImportQuestions } from "@/components/bulk-import-questions"
 import { useSound } from "@/components/sound-effects"
+import { QuestionFormData } from '@/components/bulk-import-questions'
+import { createClient } from "@/lib/supabase/client"
 
 export default function QuestionsPage() {
   const { user } = useAuth()
-  const { questions, addQuestion, updateQuestion, deleteQuestion, loading } = useApp()
+  const { addQuestion, updateQuestion, deleteQuestion, loading } = useApp()
+  const { playSound } = useSound()
+  const supabase = createClient()
+
+  // State
+  const [questions, setQuestions] = useState<Question[]>([])
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [editingQuestion, setEditingQuestion] = useState<Question | null>(null)
   const [showBulkImport, setShowBulkImport] = useState(false)
-  const { playSound } = useSound()
+  const [sortField, setSortField] = useState<keyof Question>("created_at")
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc")
+  const [searchTerm, setSearchTerm] = useState("")
+  const [filterDifficulty, setFilterDifficulty] = useState<"easy" | "normal" | "hard" | "all">("all")
 
   // Filter state
   const [filteredQuestions, setFilteredQuestions] = useState<Question[]>([])
-  const [searchQuery, setSearchQuery] = useState("")
   const [selectedTopic, setSelectedTopic] = useState<string>("all")
-  const [selectedDifficulty, setSelectedDifficulty] = useState<string>("all")
   const [selectedTag, setSelectedTag] = useState<string>("all")
   const [topics, setTopics] = useState<Array<{ name: string, count: number }>>([])
   const [tags, setTags] = useState<Array<{ name: string, count: number }>>([])
+  
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1)
+  const [questionsPerPage] = useState(10)
+  const [totalQuestions, setTotalQuestions] = useState(0)
 
   // Form state
-  const [formData, setFormData] = useState({
+  interface Question {
+    id: string;
+    user_id: string;
+    question: string;
+    options: Record<string, string>;
+    correct_option: number;
+    topic: string;
+    difficulty: "easy" | "normal" | "hard";
+    explanation: string;
+    time_limit: number;
+    points: number;
+    tags: string[];
+    metadata: Record<string, any>;
+    is_active: boolean;
+    created_at: string;
+    updated_at: string;
+    created_by: string;
+    updated_by: string;
+  }
+
+  type NewQuestion = Omit<Question, "id" | "created_at" | "updated_at">;
+
+  interface QuestionFormData {
+    question: string;
+    options: Record<string, string>;
+    correct_option: number;
+    topic: string;
+    difficulty: "easy" | "normal" | "hard";
+    explanation: string;
+    time_limit: number;
+    points: number;
+    tags: string[];
+    metadata: Record<string, any>;
+  }
+
+  interface BulkImportQuestionsProps {
+    onImport: (questions: QuestionFormData[]) => Promise<void>;
+  }
+
+  const [formData, setFormData] = useState<QuestionFormData>({
     question: "",
-    options: {} as Record<string, any>,
+    options: {
+      "1": "",
+      "2": "",
+      "3": "",
+      "4": ""
+    },
     correct_option: 0,
     topic: "",
-    difficulty: "normal" as "easy" | "normal" | "hard",
+    difficulty: "normal",
     explanation: "",
     time_limit: 60,
     points: 1,
-    tags: [] as string[],
-    metadata: {} as Record<string, any>
+    tags: [],
+    metadata: {}
   })
+
+  const resetForm = () => {
+    setFormData({
+      question: "",
+      options: {
+        "1": "",
+        "2": "",
+        "3": "",
+        "4": ""
+      },
+      correct_option: 0,
+      topic: "",
+      difficulty: "normal",
+      explanation: "",
+      time_limit: 60,
+      points: 1,
+      tags: [],
+      metadata: {}
+    })
+  }
+
+  // Calculate pagination
+  const indexOfLastQuestion = currentPage * questionsPerPage
+  const indexOfFirstQuestion = indexOfLastQuestion - questionsPerPage
+  const currentQuestions = filteredQuestions.slice(indexOfFirstQuestion, indexOfLastQuestion)
+  const totalPages = Math.ceil(filteredQuestions.length / questionsPerPage)
 
   // Extract unique topics, tags, and their counts
   useEffect(() => {
@@ -90,17 +173,18 @@ export default function QuestionsPage() {
     }
   }, [loading, questions])
 
-  // Filter questions based on search, topic, difficulty, and tags
+  // Filter and sort questions
   useEffect(() => {
     let filtered = [...questions]
 
     // Apply search filter
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase()
+    if (searchTerm.trim()) {
+      const query = searchTerm.toLowerCase()
       filtered = filtered.filter(q => 
         q.question.toLowerCase().includes(query) || 
         q.topic.toLowerCase().includes(query) ||
-        q.tags?.some(tag => tag.toLowerCase().includes(query))
+        q.tags?.some(tag => tag.toLowerCase().includes(query)) ||
+        q.explanation?.toLowerCase().includes(query)
       )
     }
 
@@ -110,8 +194,8 @@ export default function QuestionsPage() {
     }
 
     // Apply difficulty filter
-    if (selectedDifficulty !== "all") {
-      filtered = filtered.filter(q => q.difficulty === selectedDifficulty)
+    if (filterDifficulty !== "all") {
+      filtered = filtered.filter(q => q.difficulty === filterDifficulty)
     }
 
     // Apply tag filter
@@ -119,62 +203,121 @@ export default function QuestionsPage() {
       filtered = filtered.filter(q => q.tags?.includes(selectedTag))
     }
 
-    setFilteredQuestions(filtered)
-  }, [questions, searchQuery, selectedTopic, selectedDifficulty, selectedTag])
+    // Apply sorting
+    filtered.sort((a, b) => {
+      let aValue = a[sortField as keyof Question]
+      let bValue = b[sortField as keyof Question]
 
-  const resetForm = () => {
-    setFormData({
-      question: "",
-      options: {
-        "1": "",
-        "2": "",
-        "3": "",
-        "4": ""
-      },
-      correct_option: 0,
-      topic: "",
-      difficulty: "normal",
-      explanation: "",
-      time_limit: 60,
-      points: 1,
-      tags: [],
-      metadata: {}
+      // Handle special cases
+      if (sortField === "created_at" || sortField === "updated_at") {
+        aValue = new Date(aValue as string).getTime()
+        bValue = new Date(bValue as string).getTime()
+      }
+
+      if (sortDirection === "asc") {
+        return aValue && bValue ? (aValue > bValue ? 1 : -1) : 0
+      } else {
+        return aValue && bValue ? (aValue < bValue ? 1 : -1) : 0
+      }
     })
+
+    setFilteredQuestions(filtered)
+    setTotalQuestions(filtered.length)
+    // Reset to first page when filters change
+    setCurrentPage(1)
+  }, [questions, searchTerm, selectedTopic, filterDifficulty, selectedTag, sortField, sortDirection])
+
+  // Add this near the other useEffects
+  useEffect(() => {
+    if (user) {
+      fetchQuestions()
+    }
+  }, [user])
+
+  const fetchQuestions = async () => {
+    if (!user || !supabase) return
+
+    try {
+      const { data: questions, error } = await supabase
+        .from('questions')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+
+      setQuestions(questions.map(q => ({
+        ...q,
+        difficulty: q.difficulty as "easy" | "normal" | "hard",
+        options: q.options || {},
+        tags: q.tags || [],
+        metadata: q.metadata || {}
+      })))
+    } catch (error) {
+      console.error('Error fetching questions:', error)
+    }
   }
 
   const handleAddQuestion = async () => {
-    if (!user) return
+    console.log('handleAddQuestion called')
+    console.log('Current form data:', formData)
+    
+    if (!user) {
+      console.error('No user found')
+      return
+    }
 
     // Validate form
     if (!formData.question.trim() || 
         !Object.values(formData.options).every(opt => opt.trim()) || 
-        !formData.topic.trim()) {
+        !formData.topic.trim() ||
+        !formData.correct_option) {
+      console.error('Validation failed:', {
+        hasQuestion: !!formData.question.trim(),
+        hasAllOptions: Object.values(formData.options).every(opt => opt.trim()),
+        hasTopic: !!formData.topic.trim(),
+        correctOption: formData.correct_option
+      })
       return
     }
 
     try {
-      await addQuestion({
+      const newQuestion: NewQuestion = {
         user_id: user.id,
         question: formData.question.trim(),
-        options: formData.options,
+        options: Object.entries(formData.options).reduce((acc, [key, value]) => {
+          acc[key] = value.trim()
+          return acc
+        }, {} as Record<string, string>),
         correct_option: formData.correct_option,
         topic: formData.topic.trim(),
-        difficulty: formData.difficulty,
+        difficulty: formData.difficulty.toLowerCase() as "easy" | "normal" | "hard",
         explanation: formData.explanation.trim(),
         time_limit: formData.time_limit,
         points: formData.points,
         tags: formData.tags,
         metadata: {
           created_via: "web_interface",
+          created_at: new Date().toISOString(),
           ...formData.metadata
         },
-        is_active: true
-      })
+        is_active: true,
+        created_by: user.id,
+        updated_by: user.id
+      }
+
+      console.log('Attempting to add question:', newQuestion)
+      await addQuestion(newQuestion)
+      console.log('Question added successfully')
+      
+      await fetchQuestions()
       resetForm()
       setIsAddDialogOpen(false)
-      playSound("click")
+      playSound("success")
     } catch (error) {
       console.error('Failed to add question:', error)
+      playSound("error")
+      // Keep the dialog open on error
     }
   }
 
@@ -189,9 +332,13 @@ export default function QuestionsPage() {
     }
 
     try {
-      await updateQuestion(editingQuestion.id, {
+      const updatedQuestion: NewQuestion = {
+        user_id: editingQuestion.user_id,
         question: formData.question.trim(),
-        options: formData.options,
+        options: Object.entries(formData.options).reduce((acc, [key, value]) => {
+          acc[key] = value.trim()
+          return acc
+        }, {} as Record<string, string>),
         correct_option: formData.correct_option,
         topic: formData.topic.trim(),
         difficulty: formData.difficulty,
@@ -204,8 +351,11 @@ export default function QuestionsPage() {
           last_updated: new Date().toISOString(),
           updated_via: "web_interface"
         },
+        is_active: true,
+        created_by: editingQuestion.created_by,
         updated_by: user.id
-      })
+      }
+      await updateQuestion(editingQuestion.id, updatedQuestion)
       setEditingQuestion(null)
       resetForm()
       setIsEditDialogOpen(false)
@@ -260,48 +410,61 @@ export default function QuestionsPage() {
     }))
   }
 
-  const handleBulkImport = async (questionsToImport: any[]) => {
+  const handleBulkImport = async (questionsToImport: QuestionFormData[]) => {
     if (!user) return
 
     try {
       for (const q of questionsToImport) {
-        await addQuestion({
+        const newQuestion: NewQuestion = {
           user_id: user.id,
           question: q.question.trim(),
-          options: q.options,
+          options: Object.entries(q.options).reduce((acc, [key, value]) => {
+            acc[key] = value.trim()
+            return acc
+          }, {} as Record<string, string>),
           correct_option: q.correct_option,
           topic: q.topic.trim(),
-          difficulty: q.difficulty || "normal",
-          explanation: q.explanation?.trim(),
-          time_limit: q.time_limit || 60,
-          points: q.points || 1,
-          tags: q.tags || [],
+          difficulty: q.difficulty,
+          explanation: q.explanation?.trim() || "",
+          time_limit: q.time_limit,
+          points: q.points,
+          tags: q.tags,
           metadata: {
             created_via: "bulk_import",
-            import_date: new Date().toISOString(),
             ...q.metadata
           },
-          is_active: true
-        })
+          is_active: true,
+          created_by: user.id,
+          updated_by: user.id
+        }
+        await addQuestion(newQuestion)
       }
       setShowBulkImport(false)
       playSound("success")
     } catch (error) {
-      console.error('Error bulk importing questions:', error)
+      console.error('Failed to import questions:', error)
     }
   }
 
-  const getDifficultyColor = (difficulty: string) => {
-    switch (difficulty.toLowerCase()) {
+  const getDifficultyColor = (difficulty: string): "default" | "destructive" | "outline" | "secondary" => {
+    switch (difficulty) {
       case "easy":
-        return "bg-gradient-to-r from-green-400 to-green-500"
+        return "default"
       case "normal":
-        return "bg-gradient-to-r from-amber-400 to-amber-500"
+        return "secondary"
       case "hard":
-        return "bg-gradient-to-r from-red-400 to-red-500"
+        return "destructive"
       default:
-        return "bg-gradient-to-r from-gray-400 to-gray-500"
+        return "outline"
     }
+  }
+
+  const handleDifficultyChange = (value: string) => {
+    setFilterDifficulty(value as "easy" | "normal" | "hard" | "all")
+  }
+
+  const handleSortFieldChange = (value: string) => {
+    setSortField(value as keyof Question)
   }
 
   if (loading) {
@@ -316,287 +479,431 @@ export default function QuestionsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Questions</h1>
-          <p className="text-muted-foreground">Manage your quiz questions and question bank</p>
-        </div>
+    <div className="container mx-auto p-6 space-y-8">
+      <div className="flex justify-between items-center">
+        <h1 className="text-3xl font-bold">Questions</h1>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setShowBulkImport(true)} className="gap-2">
-            <Upload className="h-4 w-4" />
+          <Button onClick={() => setShowBulkImport(true)} variant="outline">
+            <Upload className="w-4 h-4 mr-2" />
             Bulk Import
           </Button>
-          <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-            <DialogTrigger asChild>
-              <Button className="gap-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white">
-                <Plus className="h-4 w-4" />
-                Add Question
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-2xl">
-              <DialogHeader>
-                <DialogTitle>Add New Question</DialogTitle>
-                <DialogDescription>Create a new multiple-choice question for your quiz</DialogDescription>
-              </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="question">Question</Label>
-                  <Textarea
-                    id="question"
-                    value={formData.question}
-                    onChange={(e) => setFormData({ ...formData, question: e.target.value })}
-                    placeholder="Enter your question"
-                    className="min-h-[80px] rounded-xl"
-                  />
-                </div>
-
-                <div className="grid gap-2">
-                  <Label>Options</Label>
-                  {Object.entries(formData.options).map(([key, value]) => (
-                    <div key={key} className="flex items-center gap-2">
-                      <Input
-                        value={value}
-                        onChange={(e) => handleOptionChange(key, e.target.value)}
-                        placeholder={`Option ${key}`}
-                        className="rounded-xl"
-                      />
-                      <div className="flex items-center">
-                        <input
-                          type="radio"
-                          id={`correct-${key}`}
-                          name="correctAnswer"
-                          checked={formData.correct_option === parseInt(key)}
-                          onChange={() => setFormData({ ...formData, correct_option: parseInt(key) })}
-                          className="mr-2"
-                        />
-                        <Label htmlFor={`correct-${key}`}>Correct</Label>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="grid gap-2">
-                  <Label htmlFor="explanation">Explanation (Optional)</Label>
-                  <Textarea
-                    id="explanation"
-                    value={formData.explanation}
-                    onChange={(e) => setFormData({ ...formData, explanation: e.target.value })}
-                    placeholder="Explain why the correct answer is correct"
-                    className="min-h-[60px] rounded-xl"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="topic">Topic</Label>
-                    <Input
-                      id="topic"
-                      value={formData.topic}
-                      onChange={(e) => setFormData({ ...formData, topic: e.target.value })}
-                      placeholder="Enter topic"
-                      className="rounded-xl"
-                    />
-                  </div>
-
-                  <div className="grid gap-2">
-                    <Label htmlFor="difficulty">Difficulty</Label>
-                    <Select
-                      value={formData.difficulty}
-                      onValueChange={(value) => setFormData({ ...formData, difficulty: value as any })}
-                    >
-                      <SelectTrigger id="difficulty" className="rounded-xl">
-                        <SelectValue placeholder="Select difficulty" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="easy">Easy</SelectItem>
-                        <SelectItem value="normal">Normal</SelectItem>
-                        <SelectItem value="hard">Hard</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="time-limit">Time Limit (seconds)</Label>
-                    <Input
-                      id="time-limit"
-                      type="number"
-                      min="10"
-                      max="300"
-                      value={formData.time_limit}
-                      onChange={(e) => setFormData({ ...formData, time_limit: parseInt(e.target.value) })}
-                      className="rounded-xl"
-                    />
-                  </div>
-
-                  <div className="grid gap-2">
-                    <Label htmlFor="points">Points</Label>
-                    <Input
-                      id="points"
-                      type="number"
-                      min="1"
-                      max="10"
-                      value={formData.points}
-                      onChange={(e) => setFormData({ ...formData, points: parseInt(e.target.value) })}
-                      className="rounded-xl"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid gap-2">
-                  <Label htmlFor="tags">Tags (comma-separated)</Label>
-                  <Input
-                    id="tags"
-                    value={formData.tags.join(", ")}
-                    onChange={(e) => handleTagsChange(e.target.value)}
-                    placeholder="Enter tags, separated by commas"
-                    className="rounded-xl"
-                  />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
-                  Cancel
-                </Button>
-                <Button onClick={handleAddQuestion}>Add Question</Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          <Button onClick={() => {
+            resetForm()
+            setIsAddDialogOpen(true)
+          }}>
+            <Plus className="w-4 h-4 mr-2" />
+            Add Question
+          </Button>
         </div>
       </div>
 
-      <Card className="overflow-hidden rounded-2xl bg-gradient-to-br from-white to-gray-50 shadow-xl dark:from-gray-800 dark:to-gray-900">
-        <CardHeader className="border-b dark:border-gray-700">
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>Question Bank</CardTitle>
-              <CardDescription>Browse and manage your questions</CardDescription>
-            </div>
-            <div className="flex gap-4">
-              <div className="flex items-center gap-2">
-                <Search className="h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search questions..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-[200px] rounded-xl"
-                />
-              </div>
-              <Select value={selectedTopic} onValueChange={setSelectedTopic}>
-                <SelectTrigger className="w-[150px] rounded-xl">
-                  <SelectValue placeholder="Filter by topic" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Topics</SelectItem>
-                  {topics.map((topic) => (
-                    <SelectItem key={topic.name} value={topic.name}>
-                      {topic.name} ({topic.count})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={selectedDifficulty} onValueChange={setSelectedDifficulty}>
-                <SelectTrigger className="w-[150px] rounded-xl">
-                  <SelectValue placeholder="Filter by difficulty" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Difficulties</SelectItem>
-                  <SelectItem value="easy">Easy</SelectItem>
-                  <SelectItem value="normal">Normal</SelectItem>
-                  <SelectItem value="hard">Hard</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={selectedTag} onValueChange={setSelectedTag}>
-                <SelectTrigger className="w-[150px] rounded-xl">
-                  <SelectValue placeholder="Filter by tag" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Tags</SelectItem>
-                  {tags.map((tag) => (
-                    <SelectItem key={tag.name} value={tag.name}>
-                      {tag.name} ({tag.count})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+      <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
+        <div className="flex-1 w-full md:w-auto">
+          <div className="relative">
+            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search questions..."
+              className="pl-8"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="flex flex-col md:flex-row gap-4">
+          <div className="space-y-2">
+            <Label>Topic</Label>
+            <Select value={selectedTopic} onValueChange={setSelectedTopic}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select topic" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Topics</SelectItem>
+                {topics.map(topic => (
+                  <SelectItem key={topic.name} value={topic.name}>
+                    {topic.name} ({topic.count})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Difficulty</Label>
+            <Select value={filterDifficulty} onValueChange={handleDifficultyChange}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select difficulty" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Difficulties</SelectItem>
+                <SelectItem value="easy">Easy</SelectItem>
+                <SelectItem value="normal">Normal</SelectItem>
+                <SelectItem value="hard">Hard</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Sort By</Label>
+            <Select value={sortField} onValueChange={handleSortFieldChange}>
+              <SelectTrigger>
+                <SelectValue placeholder="Sort by" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="created_at">Date Created</SelectItem>
+                <SelectItem value="updated_at">Date Updated</SelectItem>
+                <SelectItem value="topic">Topic</SelectItem>
+                <SelectItem value="difficulty">Difficulty</SelectItem>
+                <SelectItem value="points">Points</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Order</Label>
+            <Select value={sortDirection} onValueChange={(value: "asc" | "desc") => setSortDirection(value)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Sort order" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="asc">Ascending</SelectItem>
+                <SelectItem value="desc">Descending</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      </div>
+
+      {/* Questions Table */}
+      <Card>
+        <CardContent className="p-6">
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Question</TableHead>
+                  <TableHead>Topic</TableHead>
+                  <TableHead>Difficulty</TableHead>
+                  <TableHead>Points</TableHead>
+                  <TableHead>Time Limit</TableHead>
+                  <TableHead>Tags</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {currentQuestions.map((question) => (
+                  <TableRow key={question.id}>
+                    <TableCell className="font-medium max-w-md truncate">
+                      {question.question}
+                    </TableCell>
+                    <TableCell>{question.topic}</TableCell>
+                    <TableCell>
+                      <Badge variant={getDifficultyColor(question.difficulty)}>
+                        {question.difficulty}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{question.points}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center">
+                        <Clock className="w-4 h-4 mr-1" />
+                        {question.time_limit}s
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex gap-1 flex-wrap">
+                        {question.tags?.map((tag) => (
+                          <Badge key={tag} variant="outline" className="text-xs">
+                            {tag}
+                          </Badge>
+                        ))}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => openEditDialog(question)}
+                        >
+                          <Edit className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDeleteQuestion(question.id)}
+                        >
+                          <Trash className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* Pagination */}
+          <div className="flex items-center justify-between mt-4">
+            <p className="text-sm text-muted-foreground">
+              Showing {indexOfFirstQuestion + 1} to {Math.min(indexOfLastQuestion, totalQuestions)} of {totalQuestions} questions
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+              >
+                Previous
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages}
+              >
+                Next
+              </Button>
             </div>
           </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Question</TableHead>
-                <TableHead>Topic</TableHead>
-                <TableHead>Difficulty</TableHead>
-                <TableHead>Time</TableHead>
-                <TableHead>Points</TableHead>
-                <TableHead>Tags</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredQuestions.map((question) => (
-                <TableRow key={question.id}>
-                  <TableCell className="max-w-[300px] truncate font-medium">
-                    {question.question}
-                  </TableCell>
-                  <TableCell>{question.topic}</TableCell>
-                  <TableCell>
-                    <Badge className={`${getDifficultyColor(question.difficulty)} text-white`}>
-                      {question.difficulty}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1">
-                      <Clock className="h-4 w-4" />
-                      {question.time_limit}s
-                    </div>
-                  </TableCell>
-                  <TableCell>{question.points}</TableCell>
-                  <TableCell>
-                    <div className="flex flex-wrap gap-1">
-                      {question.tags?.map((tag) => (
-                        <Badge key={tag} variant="outline" className="text-xs">
-                          {tag}
-                        </Badge>
-                      ))}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => openEditDialog(question)}
-                      >
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleDeleteQuestion(question.id)}
-                      >
-                        <Trash className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
         </CardContent>
       </Card>
 
       <Dialog open={showBulkImport} onOpenChange={setShowBulkImport}>
-        <DialogContent>
+        <DialogContent className="max-w-4xl">
           <DialogHeader>
             <DialogTitle>Bulk Import Questions</DialogTitle>
-            <DialogDescription>Import multiple questions at once</DialogDescription>
+            <DialogDescription>
+              Import multiple questions at once using a CSV or JSON file
+            </DialogDescription>
           </DialogHeader>
+          
           <BulkImportQuestions onImport={handleBulkImport} />
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowBulkImport(false)}>
+              Cancel
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add/Edit Question Dialog */}
+      <Dialog open={isAddDialogOpen || isEditDialogOpen} onOpenChange={(open) => {
+        if (!open) {
+          setIsAddDialogOpen(false)
+          setIsEditDialogOpen(false)
+          resetForm()
+        }
+      }}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{isEditDialogOpen ? 'Edit Question' : 'Add New Question'}</DialogTitle>
+            <DialogDescription>
+              {isEditDialogOpen ? 'Update the existing question' : 'Create a new multiple-choice question for your quiz'}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid md:grid-cols-2 gap-6 py-4">
+            {/* Question Form */}
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="question">Question Text</Label>
+                <Textarea
+                  id="question"
+                  value={formData.question}
+                  onChange={(e) => setFormData(prev => ({ ...prev, question: e.target.value }))}
+                  placeholder="Enter your question"
+                  className="min-h-[100px]"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Options</Label>
+                {Object.entries(formData.options).map(([key, value]) => (
+                  <div key={key} className="flex items-center gap-2">
+                    <Input
+                      value={value}
+                      onChange={(e) => handleOptionChange(key, e.target.value)}
+                      placeholder={`Option ${key}`}
+                    />
+                    <div className="flex items-center">
+                      <input
+                        type="radio"
+                        id={`correct-${key}`}
+                        name="correctAnswer"
+                        checked={formData.correct_option === parseInt(key)}
+                        onChange={() => setFormData(prev => ({ ...prev, correct_option: parseInt(key) }))}
+                        className="mr-2"
+                      />
+                      <Label htmlFor={`correct-${key}`}>Correct</Label>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="explanation">Explanation</Label>
+                <Textarea
+                  id="explanation"
+                  value={formData.explanation}
+                  onChange={(e) => setFormData(prev => ({ ...prev, explanation: e.target.value }))}
+                  placeholder="Explain why the correct answer is correct"
+                  className="min-h-[80px]"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="topic">Topic</Label>
+                  <Input
+                    id="topic"
+                    value={formData.topic}
+                    onChange={(e) => setFormData(prev => ({ ...prev, topic: e.target.value }))}
+                    placeholder="Enter topic"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="difficulty">Difficulty</Label>
+                  <Select
+                    value={formData.difficulty}
+                    onValueChange={(value) => setFormData(prev => ({ ...prev, difficulty: value as any }))}
+                  >
+                    <SelectTrigger id="difficulty">
+                      <SelectValue placeholder="Select difficulty" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="easy">Easy</SelectItem>
+                      <SelectItem value="normal">Normal</SelectItem>
+                      <SelectItem value="hard">Hard</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="time-limit">Time Limit (seconds)</Label>
+                  <Input
+                    id="time-limit"
+                    type="number"
+                    min="10"
+                    max="300"
+                    value={formData.time_limit}
+                    onChange={(e) => setFormData(prev => ({ ...prev, time_limit: parseInt(e.target.value) }))}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="points">Points</Label>
+                  <Input
+                    id="points"
+                    type="number"
+                    min="1"
+                    max="10"
+                    value={formData.points}
+                    onChange={(e) => setFormData(prev => ({ ...prev, points: parseInt(e.target.value) }))}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="tags">Tags</Label>
+                <Input
+                  id="tags"
+                  value={formData.tags.join(", ")}
+                  onChange={(e) => handleTagsChange(e.target.value)}
+                  placeholder="Enter tags, separated by commas"
+                />
+              </div>
+            </div>
+
+            {/* Question Preview */}
+            <div className="space-y-4 p-4 border rounded-lg bg-muted/50">
+              <h3 className="font-semibold">Question Preview</h3>
+              
+              <div className="space-y-4">
+                <div className="p-4 bg-background rounded-lg">
+                  <p className="font-medium">{formData.question || "Your question will appear here"}</p>
+                  
+                  <div className="mt-4 space-y-2">
+                    {Object.entries(formData.options).map(([key, value]) => (
+                      <div
+                        key={key}
+                        className={`p-3 rounded-lg border ${
+                          parseInt(key) === formData.correct_option
+                            ? "border-green-500 bg-green-50 dark:bg-green-950"
+                            : "border-border"
+                        }`}
+                      >
+                        {value || `Option ${key} will appear here`}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {formData.explanation && (
+                  <div className="p-4 bg-background rounded-lg">
+                    <h4 className="font-medium mb-2">Explanation:</h4>
+                    <p className="text-muted-foreground">{formData.explanation}</p>
+                  </div>
+                )}
+
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant="outline">{formData.topic || "Topic"}</Badge>
+                  <Badge variant={getDifficultyColor(formData.difficulty)}>
+                    {formData.difficulty}
+                  </Badge>
+                  <Badge variant="outline">
+                    <Clock className="w-3 h-3 mr-1" />
+                    {formData.time_limit}s
+                  </Badge>
+                  <Badge variant="outline">
+                    {formData.points} {formData.points === 1 ? "point" : "points"}
+                  </Badge>
+                </div>
+
+                {formData.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {formData.tags.map((tag) => (
+                      <Badge key={tag} variant="secondary" className="text-xs">
+                        {tag}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setIsAddDialogOpen(false)
+              setIsEditDialogOpen(false)
+              resetForm()
+            }}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={async () => {
+                console.log('Add/Edit button clicked')
+                if (isEditDialogOpen) {
+                  await handleEditQuestion()
+                } else {
+                  await handleAddQuestion()
+                }
+              }}
+              disabled={
+                !formData.question.trim() ||
+                !Object.values(formData.options).every(opt => opt.trim()) ||
+                !formData.topic.trim() ||
+                !formData.correct_option
+              }
+            >
+              {isEditDialogOpen ? "Save Changes" : "Add Question"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

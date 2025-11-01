@@ -1,325 +1,197 @@
 "use client"
 
-import { useState } from "react"
-import { useApp } from "@/lib/context/AppContext"
-import { Button } from "@/components/ui/button"
+import { useEffect, useState } from "react"
+import { useAuth } from "@/lib/context/AuthContext"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { AlertCircle, Medal, RotateCcw, Trophy, User, Users } from "lucide-react"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
+import { Badge } from "@/components/ui/badge"
+import { Trophy, Medal, Award, Star, Target, Brain } from "lucide-react"
 import { motion } from "framer-motion"
+import { createClient } from "@/lib/supabase/client"
+
+interface StudentPoints {
+  id: string
+  student_id: string
+  points: number
+  quiz_count: number
+  correct_answers: number
+  total_attempts: number
+  rank: number
+  student: {
+    name: string
+    email: string
+    metadata: Record<string, any>
+  }
+}
 
 export default function LeaderboardPage() {
-  const { students, updateStudent, loading } = useApp()
-  const [isResetDialogOpen, setIsResetDialogOpen] = useState(false)
-  const [activeTab, setActiveTab] = useState<"individual" | "group">("individual")
+  const { user } = useAuth()
+  const [loading, setLoading] = useState(true)
+  const [students, setStudents] = useState<StudentPoints[]>([])
+  const supabase = createClient()
 
-  const handleResetScores = async () => {
+  useEffect(() => {
+    if (user) {
+      loadLeaderboard()
+    }
+  }, [user])
+
+  const loadLeaderboard = async () => {
     try {
-      // Reset all student scores to 0
-      await Promise.all(students.map(student => updateStudent(student.id, { score: 0 })))
-      setIsResetDialogOpen(false)
+      setLoading(true)
+      console.log('Loading leaderboard...')
+      const { data, error } = await supabase
+        .from('student_points')
+        .select(`
+          *,
+          student:students(
+            name,
+            email,
+            metadata
+          )
+        `)
+        .order('rank', { ascending: true })
+
+      if (error) {
+        console.error('Supabase error:', error)
+        throw error
+      }
+
+      console.log('Leaderboard data:', data)
+      setStudents(data as StudentPoints[])
     } catch (error) {
-      console.error('Failed to reset scores:', error)
+      console.error('Error loading leaderboard:', error)
+    } finally {
+      setLoading(false)
     }
   }
 
-  // Sort students by score (highest first)
-  const sortedStudents = [...students].sort((a, b) => b.score - a.score)
-
-  // Calculate group scores
-  const groupScores = students.reduce((acc, student) => {
-    if (student.group) {
-      acc[student.group] = (acc[student.group] || 0) + student.score
-    }
-    return acc
-  }, {} as Record<string, number>)
-
-  // Sort groups by score
-  const sortedGroups = Object.entries(groupScores)
-    .sort(([, a], [, b]) => b - a)
-    .map(([group, score]) => ({
-      group,
-      score,
-      members: students.filter(s => s.group === group).length
-    }))
-
-  const getMedalColor = (index: number) => {
-    switch (index) {
-      case 0:
-        return "text-yellow-500"
+  const getRankIcon = (rank: number) => {
+    switch (rank) {
       case 1:
-        return "text-gray-400"
+        return <Trophy className="h-6 w-6 text-yellow-500" />
       case 2:
-        return "text-amber-600"
+        return <Medal className="h-6 w-6 text-gray-400" />
+      case 3:
+        return <Award className="h-6 w-6 text-amber-600" />
       default:
-        return "text-transparent"
+        return <Target className="h-6 w-6 text-muted-foreground" />
     }
+  }
+
+  const getAccuracy = (correct: number, total: number) => {
+    if (total === 0) return 0
+    return Math.round((correct / total) * 100)
   }
 
   if (loading) {
     return (
-      <div className="flex h-[calc(100vh-4rem)] items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-center">
+          <h2 className="text-xl font-semibold mb-2">Loading...</h2>
+          <p className="text-muted-foreground">Please wait while we fetch the leaderboard.</p>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="container mx-auto p-6 space-y-8">
+      <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Leaderboard</h1>
-          <p className="text-muted-foreground">View student scores and rankings</p>
+          <p className="text-muted-foreground">Student rankings based on quiz performance</p>
         </div>
-        <Dialog open={isResetDialogOpen} onOpenChange={setIsResetDialogOpen}>
-          <DialogTrigger asChild>
-            <Button variant="outline" className="gap-2">
-              <RotateCcw className="h-4 w-4" />
-              Reset Scores
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Reset All Scores</DialogTitle>
-              <DialogDescription>
-                This will reset all student scores to zero. This action cannot be undone.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsResetDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button variant="destructive" onClick={handleResetScores}>
-                Reset All Scores
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
       </div>
 
-      <div className="flex space-x-4 mb-4">
-        <Button
-          variant={activeTab === "individual" ? "default" : "outline"}
-          onClick={() => setActiveTab("individual")}
-          className="gap-2"
-        >
-          <User className="h-4 w-4" />
-          Individual Rankings
-        </Button>
-        <Button
-          variant={activeTab === "group" ? "default" : "outline"}
-          onClick={() => setActiveTab("group")}
-          className="gap-2"
-        >
-          <Users className="h-4 w-4" />
-          Group Rankings
-        </Button>
+      <div className="grid gap-6 md:grid-cols-4">
+        {students.slice(0, 3).map((student, index) => (
+          <motion.div
+            key={student.id}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: index * 0.1 }}
+          >
+            <Card className={`overflow-hidden ${index === 0 ? 'bg-gradient-to-br from-yellow-50 to-yellow-100 dark:from-yellow-900/10 dark:to-yellow-900/20 border-yellow-200 dark:border-yellow-800' : ''}`}>
+              <CardHeader className="border-b">
+                <div className="flex items-center gap-2">
+                  {getRankIcon(student.rank)}
+                  <div>
+                    <CardTitle className="text-lg">{student.student.name}</CardTitle>
+                    <CardDescription>Rank #{student.rank}</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="p-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <p className="text-sm text-muted-foreground">Points</p>
+                    <p className="text-2xl font-bold">{student.points}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm text-muted-foreground">Accuracy</p>
+                    <p className="text-2xl font-bold">
+                      {getAccuracy(student.correct_answers, student.total_attempts)}%
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        ))}
       </div>
 
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }} 
-        animate={{ opacity: 1, y: 0 }} 
-        transition={{ duration: 0.3 }}
-        key={activeTab}
-      >
-        <Card className="overflow-hidden rounded-2xl bg-gradient-to-br from-white to-gray-50 shadow-xl dark:from-gray-800 dark:to-gray-900">
-          <CardHeader className="border-b dark:border-gray-700">
-            <CardTitle className="flex items-center gap-2">
-              <Trophy className="h-5 w-5 text-yellow-500" />
-              {activeTab === "individual" ? "Student Rankings" : "Group Rankings"}
-            </CardTitle>
-            <CardDescription>
-              {activeTab === "individual" 
-                ? "Students ranked by total score" 
-                : "Groups ranked by combined score"}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="p-6">
-            {activeTab === "individual" ? (
-              sortedStudents.length > 0 ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-12">Rank</TableHead>
-                      <TableHead>Student</TableHead>
-                      <TableHead className="text-right">Score</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {sortedStudents.map((student, index) => (
-                      <motion.tr
-                        key={student.id}
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ duration: 0.3, delay: index * 0.05 }}
-                        className={`${
-                          index < 3
-                            ? "bg-gradient-to-r from-indigo-50/50 to-purple-50/50 dark:from-indigo-900/10 dark:to-purple-900/10"
-                            : ""
-                        }`}
-                      >
-                        <TableCell className="font-medium">
-                          <div className="flex items-center gap-2">
-                            {index < 3 && (
-                              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-r from-indigo-100 to-purple-100 dark:from-indigo-900 dark:to-purple-900">
-                                <Medal className={`h-4 w-4 ${getMedalColor(index)}`} />
-                              </div>
-                            )}
-                            {index + 1}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-r from-indigo-500 to-purple-600 text-white">
-                              {student.name.charAt(0)}
-                            </div>
-                            <div>
-                              <div>{student.name}</div>
-                              {student.group && (
-                                <div className="text-sm text-muted-foreground">Group {student.group}</div>
-                              )}
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <span className="rounded-full bg-indigo-100 px-3 py-1 font-medium text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200">
-                            {student.score} pts
-                          </span>
-                        </TableCell>
-                      </motion.tr>
-                    ))}
-                  </TableBody>
-                </Table>
-              ) : (
-                <Alert>
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertTitle>No students found</AlertTitle>
-                  <AlertDescription>Add students in the Students section to see rankings.</AlertDescription>
-                </Alert>
-              )
-            ) : (
-              sortedGroups.length > 0 ? (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-12">Rank</TableHead>
-                      <TableHead>Group</TableHead>
-                      <TableHead>Members</TableHead>
-                      <TableHead className="text-right">Total Score</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {sortedGroups.map(({ group, score, members }, index) => (
-                      <motion.tr
-                        key={group}
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ duration: 0.3, delay: index * 0.05 }}
-                        className={`${
-                          index < 3
-                            ? "bg-gradient-to-r from-indigo-50/50 to-purple-50/50 dark:from-indigo-900/10 dark:to-purple-900/10"
-                            : ""
-                        }`}
-                      >
-                        <TableCell className="font-medium">
-                          <div className="flex items-center gap-2">
-                            {index < 3 && (
-                              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-r from-indigo-100 to-purple-100 dark:from-indigo-900 dark:to-purple-900">
-                                <Medal className={`h-4 w-4 ${getMedalColor(index)}`} />
-                              </div>
-                            )}
-                            {index + 1}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-r from-indigo-500 to-purple-600 text-white">
-                              {group}
-                            </div>
-                            <span>Group {group}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell>{members} students</TableCell>
-                        <TableCell className="text-right">
-                          <span className="rounded-full bg-indigo-100 px-3 py-1 font-medium text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200">
-                            {score} pts
-                          </span>
-                        </TableCell>
-                      </motion.tr>
-                    ))}
-                  </TableBody>
-                </Table>
-              ) : (
-                <Alert>
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertTitle>No groups found</AlertTitle>
-                  <AlertDescription>Add students to groups to see group rankings.</AlertDescription>
-                </Alert>
-              )
-            )}
-          </CardContent>
-        </Card>
-      </motion.div>
-
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3, delay: 0.1 }}
-      >
-        <Card className="overflow-hidden rounded-2xl bg-gradient-to-br from-white to-gray-50 shadow-xl dark:from-gray-800 dark:to-gray-900">
-          <CardHeader className="border-b dark:border-gray-700">
-            <CardTitle>Score Statistics</CardTitle>
-            <CardDescription>Overview of {activeTab === "individual" ? "student" : "group"} performance</CardDescription>
-          </CardHeader>
-          <CardContent className="p-6">
-            <div className="grid gap-4 md:grid-cols-3">
-              <div className="rounded-xl border bg-gradient-to-r from-indigo-50 to-purple-50 p-4 dark:border-gray-700 dark:from-indigo-900/20 dark:to-purple-900/20">
-                <div className="text-sm font-medium text-muted-foreground">Total Points</div>
-                <div className="text-2xl font-bold">
-                  {activeTab === "individual" 
-                    ? students.reduce((sum, student) => sum + student.score, 0)
-                    : Object.values(groupScores).reduce((sum, score) => sum + score, 0)
-                  }
-                </div>
-              </div>
-              <div className="rounded-xl border bg-gradient-to-r from-indigo-50 to-purple-50 p-4 dark:border-gray-700 dark:from-indigo-900/20 dark:to-purple-900/20">
-                <div className="text-sm font-medium text-muted-foreground">
-                  {activeTab === "individual" ? "Average Score" : "Average Group Score"}
-                </div>
-                <div className="text-2xl font-bold">
-                  {activeTab === "individual"
-                    ? students.length > 0
-                      ? (students.reduce((sum, student) => sum + student.score, 0) / students.length).toFixed(1)
-                      : "0"
-                    : sortedGroups.length > 0
-                      ? (Object.values(groupScores).reduce((sum, score) => sum + score, 0) / sortedGroups.length).toFixed(1)
-                      : "0"
-                  }
-                </div>
-              </div>
-              <div className="rounded-xl border bg-gradient-to-r from-indigo-50 to-purple-50 p-4 dark:border-gray-700 dark:from-indigo-900/20 dark:to-purple-900/20">
-                <div className="text-sm font-medium text-muted-foreground">Highest Score</div>
-                <div className="text-2xl font-bold">
-                  {activeTab === "individual"
-                    ? students.length > 0 ? Math.max(...students.map((s) => s.score)) : "0"
-                    : sortedGroups.length > 0 ? Math.max(...Object.values(groupScores)) : "0"
-                  }
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </motion.div>
+      <Card>
+        <CardHeader>
+          <CardTitle>All Students</CardTitle>
+          <CardDescription>Complete ranking of all students</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Rank</TableHead>
+                <TableHead>Student</TableHead>
+                <TableHead>Points</TableHead>
+                <TableHead>Quizzes</TableHead>
+                <TableHead>Correct Answers</TableHead>
+                <TableHead>Accuracy</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {students.map((student) => (
+                <TableRow key={student.id}>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      {getRankIcon(student.rank)}
+                      <span>#{student.rank}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell>{student.student.name}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1">
+                      <Star className="h-4 w-4 text-yellow-500" />
+                      {student.points}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1">
+                      <Brain className="h-4 w-4 text-blue-500" />
+                      {student.quiz_count}
+                    </div>
+                  </TableCell>
+                  <TableCell>{student.correct_answers}</TableCell>
+                  <TableCell>
+                    <Badge variant={getAccuracy(student.correct_answers, student.total_attempts) >= 70 ? "default" : "secondary"}>
+                      {getAccuracy(student.correct_answers, student.total_attempts)}%
+                    </Badge>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
     </div>
   )
 }

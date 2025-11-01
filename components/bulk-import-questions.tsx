@@ -9,12 +9,26 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { motion } from "framer-motion"
 import { useSound } from "@/components/sound-effects"
 import { useApp } from "@/lib/context/AppContext"
+import { Input } from "@/components/ui/input"
 
-interface BulkImportQuestionsProps {
-  onImportComplete: () => void
+export interface QuestionFormData {
+  question: string;
+  options: { [key: string]: string };
+  correct_option: number;
+  topic: string;
+  difficulty: "easy" | "normal" | "hard";
+  explanation: string;
+  time_limit: number;
+  points: number;
+  tags: string[];
+  metadata: Record<string, any>;
 }
 
-export function BulkImportQuestions({ onImportComplete }: BulkImportQuestionsProps) {
+export interface BulkImportQuestionsProps {
+  onImport: (questions: QuestionFormData[]) => Promise<void>;
+}
+
+export function BulkImportQuestions({ onImport }: BulkImportQuestionsProps) {
   const { addQuestion } = useApp()
   const [inputText, setInputText] = useState("")
   const [importStatus, setImportStatus] = useState<"idle" | "success" | "error">("idle")
@@ -46,16 +60,25 @@ export function BulkImportQuestions({ onImportComplete }: BulkImportQuestionsPro
           typeof q.question === "string" &&
           Array.isArray(q.options) &&
           q.options.length >= 2 &&
-          typeof q.correctOption === "number" &&
+          typeof q.correct_option === "number" &&
           typeof q.topic === "string" &&
           ["Easy", "Normal", "Hard"].includes(q.difficulty)
         ) {
           await addQuestion({
             question: q.question,
             options: q.options,
-            correctOption: q.correctOption,
+            correct_option: q.correct_option,
             topic: q.topic,
             difficulty: q.difficulty,
+            explanation: q.explanation || "",
+            time_limit: q.time_limit || 60,
+            points: q.points || 1,
+            tags: q.tags || [],
+            metadata: q.metadata || {},
+            is_active: true,
+            user_id: "",  // This will be set by the addQuestion function
+            created_by: "",  // This will be set by the addQuestion function
+            updated_by: ""  // This will be set by the addQuestion function
           })
           addedCount++
         }
@@ -75,7 +98,7 @@ export function BulkImportQuestions({ onImportComplete }: BulkImportQuestionsPro
         playSound("click")
       }, 100)
 
-      onImportComplete()
+      onImport(questionsData)  // Call onImport instead of onImportComplete
     } catch (error) {
       setImportStatus("error")
       setErrorMessage("Error parsing JSON: " + (error instanceof Error ? error.message : String(error)))
